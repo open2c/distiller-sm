@@ -10,22 +10,24 @@ CHUNK_NAMES = list(CHUNK_FASTQS.keys())
 EXPERIMENT_CHUNKS = {exp:[config['exp_name_sep'].join(k)
                           for k in flatten_tree({exp:config['experiments'][exp]})]
                      for exp in config['experiments'] }
+
 EXPERIMENT_NAMES = list(EXPERIMENT_CHUNKS.keys())
+
 
 rule all:
     input: expand("exps/pairs/{experiment}.nodups.pairs.gz", experiment=EXPERIMENT_NAMES)
 
+
 rule map:
-    params:
+    input:
         fastq1=lambda wildcards: CHUNK_FASTQS[wildcards.chunk][0],
         fastq2=lambda wildcards: CHUNK_FASTQS[wildcards.chunk][1],
-        index=config['genome']['fasta_path']
+        index=expand('{index}', index=config['genome']['fasta_path'])
     output:
         "chunks/sam/{chunk}.bam"
     shell: 
-        'touch {output};'
-        'echo "bwa mem -SP {params.index} {params.fastq1} {params.fastq2}"'
-        '" | samtools view -bS > {output}"'
+        "bwa mem -SP {input.index} {input.fastq1} {input.fastq2} | samtools view -bS > {output}"
+
 
 rule parse:
     input:
@@ -33,8 +35,8 @@ rule parse:
     output:
         "chunks/pairsam/{chunk}.pairsam.gz"
     shell: 
-        'touch {output};'
-        'echo "pairsamtools parse {input} | pairsamtools sort -o {output}"'
+        "pairsamtools parse {input} | pairsamtools sort -o {output}"
+
 
 rule merge:
     input:
@@ -43,26 +45,32 @@ rule merge:
     output:
         "exps/pairsam/{experiment}.pairsam.gz"
     shell:
-        'touch {output};'
-        'echo "pairsamtools merge {input} -o {output}"'
+        "pairsamtools merge {input} -o {output}"
+
 
 rule make_pairs:
+    input:
+        "exps/pairsam/{experiment}.pairsam.gz"
     output:
         "exps/pairs/{experiment}.nodups.pairs.gz"
     shell: """
+        mkdir -p exps/sam ;
         pairsamtools select '(PAIR_TYPE == "CX") or (PAIR_TYPE == "LL")' \
+            {input} \
             --output-rest >( pairsamtools split \
-                --output-pairs exps/pairs/{wildcard.experiment}.unmapped.pairs.gz \
-                --output-sam exps/sam/{wildcard.experiment}.unmapped.bam \
-
+                --output-pairs exps/pairs/{wildcards.experiment}.unmapped.pairs.gz \
+                --output-sam exps/sam/{wildcards.experiment}.unmapped.bam \
+                ) | \
         pairsamtools dedup \
             --output \
                 >( pairsamtools split \
-                    --output-pairs exps/pairs/{wildcard.experiment}.nodups.pairs.gz \
-                    --output-sam exps/sam/{wildcard.experiment}.nodups.bam \
+                    --output-pairs exps/pairs/{wildcards.experiment}.nodups.pairs.gz \
+                    --output-sam exps/sam/{wildcards.experiment}.nodups.bam \
+                 ) \
             --output-dups \
                 >( pairsamtools markasdup \
                     | pairsamtools split \
-                        --output-pairs exps/pairs/{wildcard.experiment}.dups.pairs.gz \
-                        --output-sam exps/sam/{wildcard.experiment}.dups.bam \
+                        --output-pairs exps/pairs/{wildcards.experiment}.dups.pairs.gz \
+                        --output-sam exps/sam/{wildcards.experiment}.dups.bam \
+                 )
         """
