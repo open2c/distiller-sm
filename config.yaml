@@ -1,0 +1,40 @@
+project: "test"
+
+project_folder: './'
+experiments:
+    exp_id_1:
+        lane1:
+            chunk1:
+                - "/path/to/fastq1"
+                - "/path/to/fastq2"
+            chunk2:
+                - "/path/to/fastq1"
+                - "/path/to/fastq2"
+        lane2:
+            chunk1:
+                - "/path/to/fastq1"
+                - "/path/to/fastq2"
+            chunk2:
+                - "/path/to/fastq1"
+                - "/path/to/fastq2"
+    exp_id_2:
+        lane1:
+            chunk1:
+                - "/path/to/fastq1"
+                - "/path/to/fastq2"
+            chunk2:
+                - "/path/to/fastq1"
+                - "/path/to/fastq2"
+
+experiment_groups:
+    group1:
+        - exp_id_1
+        - exp_id_2
+    group2:
+        - exp_id_1
+
+exp_name_sep: "_"
+
+genome:
+    name: 'w303'
+    fasta_path: '/path/to/fasta'
