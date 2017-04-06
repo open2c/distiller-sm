@@ -1,0 +1,16 @@
+name: distiller
+channels:
+    - conda-forge               
+    - defaults                  
+    - bioconda                  
+dependencies:
+    - python=3.4   # or 2.7
+    - setuptools 
+    - pip
+    - cython 
+    - numpy 
+    - nose 
+    - pbgzip
+    - sra-tools 
+    - pip:
+        - git+git://github.com/mirnylab/pairsamtools
