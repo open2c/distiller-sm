@@ -46,3 +46,4 @@ exp_name_sep: "-"
 genome:
     name: 'sacCer3'
     fasta_path: 'genome/sacCer3.fa.gz'
+    chrom_sizes_path: 'genome/sacCer3.chrom.sizes'

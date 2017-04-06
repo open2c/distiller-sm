@@ -4,12 +4,13 @@ configfile: "config.yaml"
 
 workdir: config['project_folder']
 
+
 RUN_TO_FASTQS, RUN_FULL_NAMES, EXPERIMENT_TO_FASTQS, EXPERIMENT_NAMES = organize_fastqs(
     config)
 
 
 rule all:
-    input: expand("exps/pairs/{experiment}.nodups.pairs.gz", experiment=EXPERIMENT_NAMES)
+    input: expand("exps/pairs/{experiment}.nodups.pairs.gz.px2", experiment=EXPERIMENT_NAMES)
 
 
 rule map:
@@ -72,3 +73,11 @@ rule make_pairs_bams:
                  )
         """
 
+
+rule index_pairs:
+    input:
+        "exps/pairs/{experiment}.nodups.pairs.gz"
+    output:
+        "exps/pairs/{experiment}.nodups.pairs.gz.px2"
+    shell: 
+        "pairix {input}"
