@@ -1,40 +1,48 @@
 project: "test"
 
-project_folder: './'
-experiments:
-    exp_id_1:
-        lane1:
-            chunk1:
-                - "/path/to/fastq1"
-                - "/path/to/fastq2"
-            chunk2:
-                - "/path/to/fastq1"
-                - "/path/to/fastq2"
-        lane2:
-            chunk1:
-                - "/path/to/fastq1"
-                - "/path/to/fastq2"
-            chunk2:
-                - "/path/to/fastq1"
-                - "/path/to/fastq2"
-    exp_id_2:
-        lane1:
-            chunk1:
-                - "/path/to/fastq1"
-                - "/path/to/fastq2"
-            chunk2:
-                - "/path/to/fastq1"
-                - "/path/to/fastq2"
+project_folder: 'test/'
+
+fastq: 'fastq/'
+
+# Alternatively, fastqs can be specified as either paths relative to the 
+# project folder or as absolute paths.
+#fastq:
+#    MATalpha_R1:
+#        lane1:
+#            - fastq/MATalpha_R1/lane1/SRR2601842_1.fastq.gz
+#            - fastq/MATalpha_R1/lane1/SRR2601842_2.fastq.gz
+#        lane2:
+#            - fastq/MATalpha_R1/lane2/SRR2601843_1.fastq.gz
+#            - fastq/MATalpha_R1/lane2/SRR2601843_2.fastq.gz
+#    MATalpha_R2:
+#        lane1:
+#            - fastq/MATalpha_R2/lane1/SRR2601845_1.fastq.gz
+#            - fastq/MATalpha_R2/lane1/SRR2601845_2.fastq.gz
+#    MATa_R1:
+#        lane1:
+#            - fastq/MATa_R1/lane1/SRR2601848_1.fastq.gz
+#            - fastq/MATa_R1/lane1/SRR2601848_2.fastq.gz
+#    MATa_R2:
+#        lane1:
+#            - fastq/MATa_R2/lane1/SRR2601851_1.fastq.gz
+#            - fastq/MATa_R2/lane1/SRR2601851_2.fastq.gz
+
 
 experiment_groups:
-    group1:
-        - exp_id_1
-        - exp_id_2
-    group2:
-        - exp_id_1
+    MATalpha:
+        - MATalpha_R1
+        - MATalpha_R2
+    MATa:
+        - MATa_R1
+        - MATa_R2
+    all:
+        - MATa_R1
+        - MATa_R2
+        - MATalpha_R1
+        - MATalpha_R2
 
-exp_name_sep: "_"
+exp_name_sep: "-"
 
 genome:
-    name: 'w303'
-    fasta_path: '/path/to/fasta'
+    name: 'sacCer3'
+    fasta_path: 'genome/sacCer3.fa.gz'
