@@ -1,17 +1,11 @@
-from _distiller_common import flatten_tree
+from _distiller_common import organize_fastqs
 
 configfile: "config.yaml"
 
-CHUNK_FASTQS = {config['exp_name_sep'].join(k):v 
-                for k,v in flatten_tree(config['experiments']).items()}
+workdir: config['project_folder']
 
-CHUNK_NAMES = list(CHUNK_FASTQS.keys())
-
-EXPERIMENT_CHUNKS = {exp:[config['exp_name_sep'].join(k)
-                          for k in flatten_tree({exp:config['experiments'][exp]})]
-                     for exp in config['experiments'] }
-
-EXPERIMENT_NAMES = list(EXPERIMENT_CHUNKS.keys())
+RUN_TO_FASTQS, RUN_FULL_NAMES, EXPERIMENT_TO_FASTQS, EXPERIMENT_NAMES = organize_fastqs(
+    config)
 
 
 rule all:
@@ -20,13 +14,16 @@ rule all:
 
 rule map:
     input:
-        fastq1=lambda wildcards: CHUNK_FASTQS[wildcards.chunk][0],
-        fastq2=lambda wildcards: CHUNK_FASTQS[wildcards.chunk][1],
-        index=expand('{index}', index=config['genome']['fasta_path'])
+        fastq1=lambda wildcards: RUN_TO_FASTQS[wildcards.chunk][0],
+        fastq2=lambda wildcards: RUN_TO_FASTQS[wildcards.chunk][1],
+        index_fasta=expand('{index}', index=config['genome']['fasta_path']),
+        index_other=expand('{index}.{res}', 
+                     index=config['genome']['fasta_path'],
+                     res=['amb', 'ann', 'bwt', 'pac', 'sa'])
     output:
         "chunks/sam/{chunk}.bam"
     shell: 
-        "bwa mem -SP {input.index} {input.fastq1} {input.fastq2} | samtools view -bS > {output}"
+        "bwa mem -SP {input.index_fasta} {input.fastq1} {input.fastq2} | samtools view -bS > {output}"
 
 
 rule parse:
@@ -41,14 +38,14 @@ rule parse:
 rule merge:
     input:
         lambda wildcards: expand("chunks/pairsam/{chunk}.pairsam.gz", 
-                                 chunk=EXPERIMENT_CHUNKS[wildcards.experiment])
+                                 chunk=EXPERIMENT_TO_FASTQS[wildcards.experiment])
     output:
         "exps/pairsam/{experiment}.pairsam.gz"
     shell:
         "pairsamtools merge {input} -o {output}"
 
 
-rule make_pairs:
+rule make_pairs_bams:
     input:
         "exps/pairsam/{experiment}.pairsam.gz"
     output:
@@ -74,3 +71,4 @@ rule make_pairs:
                         --output-sam exps/sam/{wildcards.experiment}.dups.bam \
                  )
         """
+
