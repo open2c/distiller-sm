@@ -26,16 +26,16 @@ def organize_fastqs(config):
     else:
         FLAT_TREE = flatten_tree(config['fastq'])
 
-    RUN_TO_FASTQS = {config['exp_name_sep'].join(k):v 
+    RUN_TO_FASTQS = {config['library_name_sep'].join(k):v 
                     for k,v in FLAT_TREE.items()}
 
     RUN_FULL_NAMES = list(RUN_TO_FASTQS.keys())
 
-    EXPERIMENT_TO_FASTQS = {exp:[config['exp_name_sep'].join(k)
+    LIBRARY_TO_FASTQS = {exp:[config['library_name_sep'].join(k)
                                  for k in FLAT_TREE if k[0] == exp]
                             for exp in [k[0] for k in FLAT_TREE] }
 
-    EXPERIMENT_NAMES = list(EXPERIMENT_TO_FASTQS.keys())
+    LIBRARY_NAMES = list(LIBRARY_TO_FASTQS.keys())
 
-    return RUN_TO_FASTQS, RUN_FULL_NAMES, EXPERIMENT_TO_FASTQS, EXPERIMENT_NAMES 
+    return RUN_TO_FASTQS, RUN_FULL_NAMES, LIBRARY_TO_FASTQS, LIBRARY_NAMES 
 

@@ -5,12 +5,14 @@ configfile: "config.yaml"
 workdir: config['project_folder']
 
 
-RUN_TO_FASTQS, RUN_FULL_NAMES, EXPERIMENT_TO_FASTQS, EXPERIMENT_NAMES = organize_fastqs(
+RUN_TO_FASTQS, RUN_FULL_NAMES, LIBRARY_TO_FASTQS, LIBRARY_NAMES = organize_fastqs(
     config)
 
 
 rule all:
-    input: expand("exps/pairs/{experiment}.nodups.pairs.gz.px2", experiment=EXPERIMENT_NAMES)
+    input: expand(
+        "libraries/pairs/{library}.nodups.pairs.gz.px2", 
+        library=LIBRARY_NAMES)
 
 
 rule map:
@@ -36,48 +38,72 @@ rule parse:
         "pairsamtools parse {input} | pairsamtools sort -o {output}"
 
 
-rule merge:
+rule merge_pairsam:
     input:
         lambda wildcards: expand("chunks/pairsam/{chunk}.pairsam.gz", 
-                                 chunk=EXPERIMENT_TO_FASTQS[wildcards.experiment])
+                                 chunk=LIBRARY_TO_FASTQS[wildcards.library])
     output:
-        "exps/pairsam/{experiment}.pairsam.gz"
+        "libraries/pairsam/{library}.pairsam.gz"
     shell:
         "pairsamtools merge {input} -o {output}"
 
 
 rule make_pairs_bams:
     input:
-        "exps/pairsam/{experiment}.pairsam.gz"
+        "libraries/pairsam/{library}.pairsam.gz"
     output:
-        "exps/pairs/{experiment}.nodups.pairs.gz"
+        "libraries/pairs/{library}.nodups.pairs.gz"
     shell: """
-        mkdir -p exps/sam ;
+        mkdir -p libraries/sam ;
         pairsamtools select '(PAIR_TYPE == "CX") or (PAIR_TYPE == "LL")' \
             {input} \
             --output-rest >( pairsamtools split \
-                --output-pairs exps/pairs/{wildcards.experiment}.unmapped.pairs.gz \
-                --output-sam exps/sam/{wildcards.experiment}.unmapped.bam \
+                --output-pairs libraries/pairs/{wildcards.library}.unmapped.pairs.gz \
+                --output-sam libraries/sam/{wildcards.library}.unmapped.bam \
                 ) | \
         pairsamtools dedup \
             --output \
                 >( pairsamtools split \
-                    --output-pairs exps/pairs/{wildcards.experiment}.nodups.pairs.gz \
-                    --output-sam exps/sam/{wildcards.experiment}.nodups.bam \
+                    --output-pairs libraries/pairs/{wildcards.library}.nodups.pairs.gz \
+                    --output-sam libraries/sam/{wildcards.library}.nodups.bam \
                  ) \
             --output-dups \
                 >( pairsamtools markasdup \
                     | pairsamtools split \
-                        --output-pairs exps/pairs/{wildcards.experiment}.dups.pairs.gz \
-                        --output-sam exps/sam/{wildcards.experiment}.dups.bam \
+                        --output-pairs libraries/pairs/{wildcards.library}.dups.pairs.gz \
+                        --output-sam libraries/sam/{wildcards.library}.dups.bam \
                  )
         """
 
 
 rule index_pairs:
     input:
-        "exps/pairs/{experiment}.nodups.pairs.gz"
+        "libraries/pairs/{library}.nodups.pairs.gz"
     output:
-        "exps/pairs/{experiment}.nodups.pairs.gz.px2"
+        "libraries/pairs/{library}.nodups.pairs.gz.px2"
     shell: 
         "pairix {input}"
+
+
+rule make_library_coolers:
+    input:
+        library="libraries/pairs/{library}.nodups.pairs.gz",
+        library_index="libraries/pairs/{library}.nodups.pairs.gz.px2",
+        chrom_sizes=expand(
+            '{chrom_sizes}', chrom_sizes=config['genome']['chrom_sizes_path']),
+    params:
+        res=lambda wildcards: wildcards['res'],
+        assembly=expand("{assembly}", assembly=config['genome']['name'])
+    output:
+        "libraries/coolers/{library}.{res}.cool"
+    shell:
+        """
+        cooler cload pairix \
+            --assembly {params.assembly} \
+            {input.chrom_sizes}:{params.res} {input.library} {output}
+        """
+       
+rule test_coolers:
+    input: 
+        expand("libraries/coolers/{library}.{res}.cool",
+               library=LIBRARY_NAMES, res=config['cooler_resolutions'])

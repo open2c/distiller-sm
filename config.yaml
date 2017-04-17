@@ -27,8 +27,7 @@ fastq: 'fastq/'
 #            - fastq/MATa_R2/lane1/SRR2601851_1.fastq.gz
 #            - fastq/MATa_R2/lane1/SRR2601851_2.fastq.gz
 
-
-experiment_groups:
+library_groups:
     MATalpha:
         - MATalpha_R1
         - MATalpha_R2
@@ -41,9 +40,18 @@ experiment_groups:
         - MATalpha_R1
         - MATalpha_R2
 
-exp_name_sep: "-"
+library_name_sep: "-"
 
 genome:
     name: 'sacCer3'
     fasta_path: 'genome/sacCer3.fa.gz'
     chrom_sizes_path: 'genome/sacCer3.chrom.sizes'
+
+cooler_resolutions:
+    - 1000000
+    - 400000
+    - 200000
+    - 100000
+    - 40000
+    - 20000
+    - 10000
