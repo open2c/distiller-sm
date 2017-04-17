@@ -10,9 +10,7 @@ RUN_TO_FASTQS, RUN_FULL_NAMES, LIBRARY_TO_FASTQS, LIBRARY_NAMES = organize_fastq
 
 
 rule all:
-    input: expand(
-        "libraries/pairs/{library}.nodups.pairs.gz.px2", 
-        library=LIBRARY_NAMES)
+    input: expand( "libraries/pairs/{library}.nodups.pairs.gz.px2", library=LIBRARY_NAMES)
 
 
 rule map:
@@ -38,21 +36,39 @@ rule parse:
         "pairsamtools parse {input} | pairsamtools sort -o {output}"
 
 
-rule merge_pairsam:
+rule make_chunk_stats:
     input:
-        lambda wildcards: expand("chunks/pairsam/{chunk}.pairsam.gz", 
-                                 chunk=LIBRARY_TO_FASTQS[wildcards.library])
+        "chunks/pairsam/{chunk}.pairsam.gz"
     output:
-        "libraries/pairsam/{library}.pairsam.gz"
+        "chunks/stats/{chunk}.stats.tsv"
     shell:
-        "pairsamtools merge {input} -o {output}"
+        "pairsamtools stats {input} -o {output}"
+
+
+rule merge_libraries:
+    input:
+        pairsams=lambda wildcards: expand("chunks/pairsam/{chunk}.pairsam.gz", 
+                                 chunk=LIBRARY_TO_FASTQS[wildcards.library]),
+        stats=lambda wildcards: expand("chunks/stats/{chunk}.stats.tsv", 
+                                 chunk=LIBRARY_TO_FASTQS[wildcards.library]),
+        
+    output:
+        pairsam="libraries/pairsam/{library}.pairsam.gz",
+        stat="libraries/stats/{library}.stats.tsv",
+    shell:
+        """
+        pairsamtools merge {input.pairsams} -o {output.pairsam}
+        pairsamtools stats --merge {input.stats} -o {output.stat}
+        """
 
 
 rule make_pairs_bams:
     input:
-        "libraries/pairsam/{library}.pairsam.gz"
+        pairsam="libraries/pairsam/{library}.pairsam.gz"
+
     output:
-        "libraries/pairs/{library}.nodups.pairs.gz"
+        pairs="libraries/pairs/{library}.nodups.pairs.gz",
+        stat="libraries/stats/{library}.dedup.stat.tsv"
     shell: """
         mkdir -p libraries/sam ;
         pairsamtools select '(PAIR_TYPE == "CX") or (PAIR_TYPE == "LL")' \
@@ -72,7 +88,8 @@ rule make_pairs_bams:
                     | pairsamtools split \
                         --output-pairs libraries/pairs/{wildcards.library}.dups.pairs.gz \
                         --output-sam libraries/sam/{wildcards.library}.dups.bam \
-                 )
+                 ) \
+            --stats-file {output.stat}
         """
 
 
@@ -87,8 +104,8 @@ rule index_pairs:
 
 rule make_library_coolers:
     input:
-        library="libraries/pairs/{library}.nodups.pairs.gz",
-        library_index="libraries/pairs/{library}.nodups.pairs.gz.px2",
+        pairs="libraries/pairs/{library}.nodups.pairs.gz",
+        pairix_index="libraries/pairs/{library}.nodups.pairs.gz.px2",
         chrom_sizes=expand(
             '{chrom_sizes}', chrom_sizes=config['genome']['chrom_sizes_path']),
     params:
@@ -100,9 +117,10 @@ rule make_library_coolers:
         """
         cooler cload pairix \
             --assembly {params.assembly} \
-            {input.chrom_sizes}:{params.res} {input.library} {output}
+            {input.chrom_sizes}:{params.res} {input.pairs} {output}
         """
        
+
 rule test_coolers:
     input: 
         expand("libraries/coolers/{library}.{res}.cool",
