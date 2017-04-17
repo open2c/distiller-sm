@@ -10,47 +10,92 @@ RUN_TO_FASTQS, RUN_FULL_NAMES, LIBRARY_TO_FASTQS, LIBRARY_NAMES = organize_fastq
 
 
 rule all:
-    input: expand( "libraries/pairs/{library}.nodups.pairs.gz.px2", library=LIBRARY_NAMES)
+    input: expand("libraries/pairs/{library}.nodups.pairs.gz.px2", library=LIBRARY_NAMES)
+    #input: expand( "runs/pairsam/{run}.pairsam.gz", run=RUN_FULL_NAMES)
 
 
-rule map:
+rule chunk_runs:
     input:
-        fastq1=lambda wildcards: RUN_TO_FASTQS[wildcards.chunk][0],
-        fastq2=lambda wildcards: RUN_TO_FASTQS[wildcards.chunk][1],
+        fastq1=lambda wildcards: RUN_TO_FASTQS[wildcards.run][0],
+        fastq2=lambda wildcards: RUN_TO_FASTQS[wildcards.run][1],
+    params:
+        chunksize=expand("{chunksize}", chunksize=4*config['chunksize']),
+        run=lambda wildcards: wildcards.run,
+    output:
+        chunk1=dynamic('chunks/fastq/{run}/{run}.1.fastq.chunk.{chunk_id}.gz'),
+        chunk2=dynamic('chunks/fastq/{run}/{run}.2.fastq.chunk.{chunk_id}.gz'),
+    shell:
+        """
+        zcat {input.fastq1} | split -l {params.chunksize} -d \
+            --filter 'gzip > $FILE.gz' - chunks/fastq/{params.run}/{params.run}.1.fastq.chunk.
+        zcat {input.fastq2} | split -l {params.chunksize} -d \
+            --filter 'gzip > $FILE.gz' - chunks/fastq/{params.run}/{params.run}.2.fastq.chunk.
+        """
+
+
+rule map_chunks:
+    input:
+        fastq1='chunks/fastq/{run}/{run}.1.fastq.chunk.{chunk_id}.gz',
+        fastq2='chunks/fastq/{run}/{run}.2.fastq.chunk.{chunk_id}.gz',
         index_fasta=expand('{index}', index=config['genome']['fasta_path']),
         index_other=expand('{index}.{res}', 
-                     index=config['genome']['fasta_path'],
-                     res=['amb', 'ann', 'bwt', 'pac', 'sa'])
+                           index=config['genome']['fasta_path'],
+                           res=['amb', 'ann', 'bwt', 'pac', 'sa'])
     output:
-        "chunks/sam/{chunk}.bam"
+        "chunks/sam/{run}/{run}.chunk.{chunk_id}.bam"
+    shell: 
+        """
+        bwa mem -SP {input.index_fasta} {input.fastq1} {input.fastq2} \
+            | samtools view -bS > {output}
+        """
+
+rule map_runs:
+    input:
+        fastq1=lambda wildcards: RUN_TO_FASTQS[wildcards.run][0],
+        fastq2=lambda wildcards: RUN_TO_FASTQS[wildcards.run][1],
+        index_fasta=expand('{index}', index=config['genome']['fasta_path']),
+        index_other=expand('{index}.{res}', 
+                           index=config['genome']['fasta_path'],
+                           res=['amb', 'ann', 'bwt', 'pac', 'sa'])
+    output:
+        "runs/sam/{run}.bam"
     shell: 
         "bwa mem -SP {input.index_fasta} {input.fastq1} {input.fastq2} | samtools view -bS > {output}"
 
 
-rule parse:
+rule parse_runs:
     input:
-        "chunks/sam/{chunk}.bam"
+        dynamic("chunks/sam/{run}/{run}.chunk.{chunk_id}.bam") if config.get('chunksize', 0) else "runs/sam/{run}.bam" 
     output:
-        "chunks/pairsam/{chunk}.pairsam.gz"
-    shell: 
-        "pairsamtools parse {input} | pairsamtools sort -o {output}"
+        "runs/pairsam/{run}.pairsam.gz"
+    run: 
+        if config.get('chunksize', 0):
+            shell(
+                """
+                cat <( samtools merge - {input} | samtools view -H ) \
+                    <( samtools cat {input} | samtools view ) \
+                    | pairsamtools parse | pairsamtools sort -o {output}
+                """
+            )
+        else:
+            shell("pairsamtools parse {input} | pairsamtools sort -o {output}")
 
 
-rule make_chunk_stats:
+rule make_run_stats:
     input:
-        "chunks/pairsam/{chunk}.pairsam.gz"
+        "runs/pairsam/{run}.pairsam.gz"
     output:
-        "chunks/stats/{chunk}.stats.tsv"
+        "runs/stats/{run}.stats.tsv"
     shell:
         "pairsamtools stats {input} -o {output}"
 
 
-rule merge_libraries:
+rule merge_runs_into_libraries:
     input:
-        pairsams=lambda wildcards: expand("chunks/pairsam/{chunk}.pairsam.gz", 
-                                 chunk=LIBRARY_TO_FASTQS[wildcards.library]),
-        stats=lambda wildcards: expand("chunks/stats/{chunk}.stats.tsv", 
-                                 chunk=LIBRARY_TO_FASTQS[wildcards.library]),
+        pairsams=lambda wildcards: expand("runs/pairsam/{run}.pairsam.gz", 
+                                 run=LIBRARY_TO_FASTQS[wildcards.library]),
+        stats=lambda wildcards: expand("runs/stats/{run}.stats.tsv", 
+                                 run=LIBRARY_TO_FASTQS[wildcards.library]),
         
     output:
         pairsam="libraries/pairsam/{library}.pairsam.gz",

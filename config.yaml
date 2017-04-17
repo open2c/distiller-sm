@@ -27,6 +27,11 @@ fastq: 'fastq/'
 #            - fastq/MATa_R2/lane1/SRR2601851_1.fastq.gz
 #            - fastq/MATa_R2/lane1/SRR2601851_2.fastq.gz
 
+
+#chunksize: 0
+chunksize: 30000
+
+
 library_groups:
     MATalpha:
         - MATalpha_R1
@@ -40,7 +45,7 @@ library_groups:
         - MATalpha_R1
         - MATalpha_R2
 
-library_name_sep: "-"
+library_name_sep: "."
 
 genome:
     name: 'sacCer3'
