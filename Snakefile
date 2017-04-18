@@ -48,6 +48,7 @@ rule map_chunks:
             | samtools view -bS > {output}
         """
 
+
 rule map_runs:
     input:
         fastq1=lambda wildcards: RUN_TO_FASTQS[wildcards.run][0],
@@ -65,6 +66,10 @@ rule map_runs:
 rule parse_runs:
     input:
         dynamic("chunks/sam/{run}/{run}.chunk.{chunk_id}.bam") if config.get('chunksize', 0) else "runs/sam/{run}.bam" 
+    params:
+        dropsam_flag='--drop-sam' if config.get('drop_sam',False) else '',
+        dropreadid_flag='--drop-readid' if config.get('drop_readid', False) else '',
+        assembly=config['genome']['assembly']
     output:
         "runs/pairsam/{run}.pairsam.gz"
     run: 
@@ -73,11 +78,15 @@ rule parse_runs:
                 """
                 cat <( samtools merge - {input} | samtools view -H ) \
                     <( samtools cat {input} | samtools view ) \
-                    | pairsamtools parse | pairsamtools sort -o {output}
+                    | pairsamtools parse {params.dropsam_flag} {params.dropreadid_flag} \
+                    | pairsamtools sort -o {output}
                 """
             )
         else:
-            shell("pairsamtools parse {input} | pairsamtools sort -o {output}")
+            shell("""
+                pairsamtools parse {input} {params.dropsam_flag} {params.dropreadid_flag} \
+                | pairsamtools sort -o {output}
+            """)
 
 
 rule make_run_stats:
@@ -112,28 +121,49 @@ rule make_pairs_bams:
     output:
         pairs="libraries/pairs/{library}.nodups.pairs.gz",
         stats="libraries/stats/{library}.dedup.stats.tsv"
-    shell: """
-        mkdir -p libraries/sam ;
-        pairsamtools select '(PAIR_TYPE == "CX") or (PAIR_TYPE == "LL")' \
-            {input} \
-            --output-rest >( pairsamtools split \
-                --output-pairs libraries/pairs/{wildcards.library}.unmapped.pairs.gz \
-                --output-sam libraries/sam/{wildcards.library}.unmapped.bam \
-                ) | \
-        pairsamtools dedup \
-            --output \
-                >( pairsamtools split \
-                    --output-pairs libraries/pairs/{wildcards.library}.nodups.pairs.gz \
-                    --output-sam libraries/sam/{wildcards.library}.nodups.bam \
-                 ) \
-            --output-dups \
-                >( pairsamtools markasdup \
-                    | pairsamtools split \
-                        --output-pairs libraries/pairs/{wildcards.library}.dups.pairs.gz \
-                        --output-sam libraries/sam/{wildcards.library}.dups.bam \
-                 ) \
-            --stats-file {output.stats}
-        """
+    run:
+        if config.get('drop_sam', False):
+            shell("""
+            pairsamtools select '(PAIR_TYPE == "CX") or (PAIR_TYPE == "LL")' \
+                {input} \
+                --output-rest >( pairsamtools split \
+                    --output-pairs libraries/pairs/{wildcards.library}.unmapped.pairs.gz \
+                    ) | \
+            pairsamtools dedup \
+                --output \
+                    >( pairsamtools split \
+                        --output-pairs libraries/pairs/{wildcards.library}.nodups.pairs.gz \
+                     ) \
+                --output-dups \
+                    >( pairsamtools markasdup \
+                        | pairsamtools split \
+                            --output-pairs libraries/pairs/{wildcards.library}.dups.pairs.gz \
+                     ) \
+                --stats-file {output.stats}
+            """)
+        else:
+            shell("""
+            mkdir -p libraries/sam ;
+            pairsamtools select '(PAIR_TYPE == "CX") or (PAIR_TYPE == "LL")' \
+                {input} \
+                --output-rest >( pairsamtools split \
+                    --output-pairs libraries/pairs/{wildcards.library}.unmapped.pairs.gz \
+                    --output-sam libraries/sam/{wildcards.library}.unmapped.bam \
+                    ) | \
+            pairsamtools dedup \
+                --output \
+                    >( pairsamtools split \
+                        --output-pairs libraries/pairs/{wildcards.library}.nodups.pairs.gz \
+                        --output-sam libraries/sam/{wildcards.library}.nodups.bam \
+                     ) \
+                --output-dups \
+                    >( pairsamtools markasdup \
+                        | pairsamtools split \
+                            --output-pairs libraries/pairs/{wildcards.library}.dups.pairs.gz \
+                            --output-sam libraries/sam/{wildcards.library}.dups.bam \
+                     ) \
+                --stats-file {output.stats}
+            """)
 
 
 rule index_pairs:
@@ -153,7 +183,7 @@ rule make_library_coolers:
             '{chrom_sizes}', chrom_sizes=config['genome']['chrom_sizes_path']),
     params:
         res=lambda wildcards: wildcards['res'],
-        assembly=expand("{assembly}", assembly=config['genome']['name'])
+        assembly=expand("{assembly}", assembly=config['genome']['assembly'])
     output:
         "libraries/coolers/{library}.{res}.cool"
     shell:

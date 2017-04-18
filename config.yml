@@ -30,6 +30,8 @@ fastq: 'fastq/'
 
 #chunksize: 0
 chunksize: 30000
+#drop_sam: True
+#drop_readid: True
 
 
 library_groups:
@@ -48,7 +50,7 @@ library_groups:
 library_name_sep: "."
 
 genome:
-    name: 'sacCer3'
+    assembly: 'sacCer3'
     fasta_path: 'genome/sacCer3.fa.gz'
     chrom_sizes_path: 'genome/sacCer3.chrom.sizes'
 
