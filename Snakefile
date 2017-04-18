@@ -1,6 +1,6 @@
 from _distiller_common import organize_fastqs
 
-configfile: "config.yaml"
+configfile: "config.yml"
 
 workdir: config['project_folder']
 
