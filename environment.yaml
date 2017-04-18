@@ -3,8 +3,10 @@ channels:
     - conda-forge               
     - defaults                  
     - bioconda                  
+    - golobor
 dependencies:
     - python=3.4   # or 2.7
+    - pairix
     - setuptools 
     - pip
     - cython 
