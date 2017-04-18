@@ -9,9 +9,8 @@ RUN_TO_FASTQS, RUN_FULL_NAMES, LIBRARY_TO_FASTQS, LIBRARY_NAMES = organize_fastq
     config)
 
 
-rule all:
-    input: expand("libraries/pairs/{library}.nodups.pairs.gz.px2", library=LIBRARY_NAMES)
-    #input: expand( "runs/pairsam/{run}.pairsam.gz", run=RUN_FULL_NAMES)
+rule default:
+    input: expand("libraries/pairs/{library}.nodups.pairs.gz", library=LIBRARY_NAMES)
 
 
 rule chunk_runs:
@@ -96,14 +95,13 @@ rule merge_runs_into_libraries:
                                  run=LIBRARY_TO_FASTQS[wildcards.library]),
         stats=lambda wildcards: expand("runs/stats/{run}.stats.tsv", 
                                  run=LIBRARY_TO_FASTQS[wildcards.library]),
-        
     output:
         pairsam="libraries/pairsam/{library}.pairsam.gz",
-        stat="libraries/stats/{library}.stats.tsv",
+        stats="libraries/stats/{library}.stats.tsv",
     shell:
         """
         pairsamtools merge {input.pairsams} -o {output.pairsam}
-        pairsamtools stats --merge {input.stats} -o {output.stat}
+        pairsamtools stats --merge {input.stats} -o {output.stats}
         """
 
 
@@ -113,7 +111,7 @@ rule make_pairs_bams:
 
     output:
         pairs="libraries/pairs/{library}.nodups.pairs.gz",
-        stat="libraries/stats/{library}.dedup.stat.tsv"
+        stats="libraries/stats/{library}.dedup.stats.tsv"
     shell: """
         mkdir -p libraries/sam ;
         pairsamtools select '(PAIR_TYPE == "CX") or (PAIR_TYPE == "LL")' \
@@ -134,7 +132,7 @@ rule make_pairs_bams:
                         --output-pairs libraries/pairs/{wildcards.library}.dups.pairs.gz \
                         --output-sam libraries/sam/{wildcards.library}.dups.bam \
                  ) \
-            --stats-file {output.stat}
+            --stats-file {output.stats}
         """
 
 
@@ -164,9 +162,54 @@ rule make_library_coolers:
             --assembly {params.assembly} \
             {input.chrom_sizes}:{params.res} {input.pairs} {output}
         """
-       
 
-rule test_coolers:
+
+rule merge_library_group_stats:
+    input:
+        stats=lambda wildcard: expand(
+            "libraries/stats/{library}.stats.tsv",
+            library=config['library_groups'][wildcard.library_group],
+            ),
+        stats_dedup=lambda wildcard: expand(
+            "libraries/stats/{library}.dedup.stats.tsv",
+            library=config['library_groups'][wildcard.library_group],
+            )
+
+    output:
+        stats="library_groups/stats/{library_group}.stats.tsv"
+    shell:
+        """
+        pairsamtools stats --merge {input.stats} {input.stats_dedup} -o {output.stats}
+        """
+
+
+rule make_library_group_coolers:
+    input:
+        coolers=lambda wildcard: expand(
+            "libraries/coolers/{library}.{res}.cool", 
+            library=config['library_groups'][wildcard.library_group],
+            res=wildcard.res),
+    output:
+        cooler="library_groups/coolers/{library_group}.{res}.cool",
+    shell:
+        """
+        cooler merge {output.cooler} {input.coolers}
+        """
+
+
+rule make_all_coolers:
     input: 
-        expand("libraries/coolers/{library}.{res}.cool",
-               library=LIBRARY_NAMES, res=config['cooler_resolutions'])
+        library_coolers = expand(
+            "libraries/coolers/{library}.{res}.cool",
+            library=LIBRARY_NAMES,
+            res=config['cooler_resolutions']),
+        library_group_coolers = expand(
+            "library_groups/coolers/{library_group}.{res}.cool",
+            library_group=config['library_groups'].keys(), 
+            res=config['cooler_resolutions']),
+        library_group_stats = expand(
+            "library_groups/stats/{library_group}.stats.tsv",
+            library_group=config['library_groups'].keys(), 
+            )
+
+        
