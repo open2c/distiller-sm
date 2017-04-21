@@ -1,41 +1,52 @@
 import os, pathlib
 
 
-def iflatten_tree(tree, root=None):
-    for k, v in tree.items():
-        if isinstance(v, dict):
-            for z in iflatten_tree(v, root+[k] if root is not None else [k]):
-                yield z
-        else:
-            yield (tuple(root+[k] if root is not None else [k]), v)
+def parse_fastq_folder(root_folder_path):
+    library_run_fastqs = {}
+    fastq_root_folder = pathlib.Path(root_folder_path)
+    for fastq_file in sorted(fastq_root_folder.glob('**/*')):
+        if not fastq_file.is_file():
+            continue
+        split_path = fastq_file.relative_to(fastq_root_folder).parts
+        if len(split_path) != 3:
+            raise Exception(
+                'The fastq folder has a non-standard structure! '
+                'Please, make sure that the fastq folders only contains a folder '
+                'per library, each containing a folder per run, each _only_ containing '  
+                'two fastq(.gz) files.')
+        library, run, fastq = split_path
+
+        library_run_fastqs.setdefault(library, {}).setdefault(run, []).append(
+            str(fastq_file.absolute()))
+
+    return library_run_fastqs
 
 
-def flatten_tree(tree):
-    return dict(list(iflatten_tree(tree)))
+def check_fastq_dict_structure(library_run_fastqs):
+    for library, run_dict in library_run_fastqs.items():
+        if not isinstance(run_dict, dict):
+            return False
+        for run, fastq_files in run_dict.items():
+            if (not isinstance(fastq_list, list) or (len(fastq_list) != 2)):
+                return False
+    return True
 
 
 def organize_fastqs(config):
-    if isinstance(config['fastq'], str):
-        FLAT_TREE = {}
-        for p in (pathlib.Path('.')/config['fastq']).glob('**/*'):
-            if p.is_file():
-                k = p.parts[1:-1]
-                FLAT_TREE[k] = FLAT_TREE.get(k, []) + [str(p)]
-
-        FLAT_TREE = {k:sorted(v) for k,v in FLAT_TREE.items()}
+    if isinstance(config['fastq_paths'], str):
+        library_run_fastqs = parse_fastq_folder(config['fastq_paths'])
+    elif isinstance(config['fastqs'], dict):
+        if not check_fastq_dict_structure(config['fastq_paths']):
+            raise Exception(
+                'An unknown format for library_fastqs! Please provide it as either '
+                'a path to the folder structured as "library/run/fastqs" or '
+                'a dictionary specifying the project structure.')
+        library_run_fastqs = config['fastq_paths']
     else:
-        FLAT_TREE = flatten_tree(config['fastq'])
+        raise Exception(
+            'An unknown format for library_fastqs! Please provide it as either '
+            'a path to the folder with the structure library/run/fastqs or '
+            'a dictionary specifying the project structure.')
 
-    RUN_TO_FASTQS = {config['library_name_sep'].join(k):v 
-                    for k,v in FLAT_TREE.items()}
-
-    RUN_FULL_NAMES = list(RUN_TO_FASTQS.keys())
-
-    LIBRARY_TO_FASTQS = {exp:[config['library_name_sep'].join(k)
-                                 for k in FLAT_TREE if k[0] == exp]
-                            for exp in [k[0] for k in FLAT_TREE] }
-
-    LIBRARY_NAMES = list(LIBRARY_TO_FASTQS.keys())
-
-    return RUN_TO_FASTQS, RUN_FULL_NAMES, LIBRARY_TO_FASTQS, LIBRARY_NAMES 
+    return library_run_fastqs 
 

@@ -1,12 +1,12 @@
 project: "test"
 
-project_folder: 'test/'
+project_folder: 'test/' # either absolute or relative to the current working directory!
 
-fastq: 'fastq/'
+fastq_paths: 'fastq/' # either absolute or relative to the project folder!
 
 # Alternatively, fastqs can be specified as either paths relative to the 
 # project folder or as absolute paths.
-#fastq:
+#fastq_paths:
 #    MATalpha_R1:
 #        lane1:
 #            - fastq/MATalpha_R1/lane1/SRR2601842_1.fastq.gz
@@ -27,13 +27,6 @@ fastq: 'fastq/'
 #            - fastq/MATa_R2/lane1/SRR2601851_1.fastq.gz
 #            - fastq/MATa_R2/lane1/SRR2601851_2.fastq.gz
 
-
-#chunksize: 0
-chunksize: 30000
-#drop_sam: True
-#drop_readid: True
-
-
 library_groups:
     MATalpha:
         - MATalpha_R1
@@ -47,12 +40,15 @@ library_groups:
         - MATalpha_R1
         - MATalpha_R2
 
-library_name_sep: "."
-
 genome:
     assembly: 'sacCer3'
     fasta_path: 'genome/sacCer3.fa.gz'
     chrom_sizes_path: 'genome/sacCer3.chrom.sizes'
+
+#chunksize: 0
+chunksize: 30000
+#drop_sam: True
+#drop_readid: True
 
 cooler_resolutions:
     - 1000000
