@@ -1,3 +1,4 @@
+import tempfile
 from urllib.parse import urlparse
 from _distiller_common import organize_fastqs, needs_downloading
 
@@ -50,6 +51,41 @@ rule download_fastqs:
                 ('mv downloaded_fastqs/{srr}_2.fastq.gz '
                  'downloaded_fastqs/{library}.{run}.2.fastq.gz').format(
                      srr=srr, library=params.library, run=params.run))
+
+rule fastqc:
+    input:
+        fastq=lambda wc: (
+            'downloaded_fastqs/{}.{}.{}.fastq.gz'.format(
+                wc.library, wc.run, wc.side)
+            if needs_downloading(LIBRARY_RUN_FASTQS[wc.library][wc.run], 
+                int(wc.side) - 1)
+            else LIBRARY_RUN_FASTQS[wc.library][wc.run][int(wc.side) - 1]
+        )
+    params:
+        library=lambda wc: wc.library,
+        run=lambda wc: wc.run,
+        side=lambda wc: wc.side,
+    output:
+        fastqc='fastqc/{library}.{run}.{side}_fastqc.html',
+    run:
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            if input.fastq.startswith('downloaded_fastqs/'):
+                shell('fastqc -o fastqc -f fastq {}'.format(input.fastq))
+            else:
+                shell((
+                    'ln -s {fastq} {tmpdirname}/{library}.{run}.{side}.fastq.gz &&'
+                    'fastqc -o fastqc -f fastq {tmpdirname}/{library}.{run}.{side}.fastq.gz'
+                    ).format(
+                        fastq=os.path.abspath(input.fastq),
+                        tmpdirname=tmpdirname,
+                        library=params.library, run=params.run, side=params.side))
+
+rule fastqc_all:
+    input: 
+        ['fastqc/{l}.{r}.{s}_fastqc.html'.format(l=l, r=r, s=s)
+         for l in LIBRARY_RUN_FASTQS
+         for r in LIBRARY_RUN_FASTQS[l]
+         for s in [1,2]]
 
         
 rule chunk_runs:
