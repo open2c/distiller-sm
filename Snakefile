@@ -1,9 +1,9 @@
-from _distiller_common import organize_fastqs
+from urllib.parse import urlparse
+from _distiller_common import organize_fastqs, needs_downloading
 
 configfile: "config.yml"
 
 workdir: config['project_folder']
-
 
 LIBRARY_RUN_FASTQS = organize_fastqs(config)
 
@@ -15,10 +15,53 @@ rule default:
             library=LIBRARY_RUN_FASTQS.keys())
 
 
+rule download_fastqs:
+    params:
+        library=lambda wc: wc.library,
+        run=lambda wc: wc.run,
+    output:
+        fastq1='downloaded_fastqs/{library}.{run}.1.fastq.gz',
+        fastq2='downloaded_fastqs/{library}.{run}.2.fastq.gz',
+    run:
+        fastq_files = LIBRARY_RUN_FASTQS[params.library][params.run]
+        if (len(fastq_files) == 1) and (fastq_files[0].startswith('sra:')):
+            parsed = urlparse(fastq_files[0])
+            srr, query = parsed.path, parsed.query
+            start, end = 0, None
+            if query:
+                for kv_pair in query.split('&'):
+                    k,v = kv_pair.split('=')
+                    if k == 'start':
+                        start = v
+                    if k == 'end':
+                        end = v
+
+            shell(
+                ('fastq-dump --origfmt --split-files --gzip '
+                 '-O downloaded_fastqs {srr}').format(srr=srr)
+                + (' --minSpotId {}'.format(start) if start else '')
+                + (' --maxSpotId {}'.format(end) if end else '')
+                )
+            shell(
+                ('mv downloaded_fastqs/{srr}_1.fastq.gz '
+                 'downloaded_fastqs/{library}.{run}.1.fastq.gz').format(
+                     srr=srr, library=params.library, run=params.run))
+            shell(
+                ('mv downloaded_fastqs/{srr}_2.fastq.gz '
+                 'downloaded_fastqs/{library}.{run}.2.fastq.gz').format(
+                     srr=srr, library=params.library, run=params.run))
+
+        
 rule chunk_runs:
     input:
-        fastq1=lambda wc: LIBRARY_RUN_FASTQS[wc.library][wc.run][0],
-        fastq2=lambda wc: LIBRARY_RUN_FASTQS[wc.library][wc.run][1],
+        fastq1=lambda wc: (
+            'downloaded_fastqs/{}.{}.1.fastq.gz'.format(wc.library, wc.run)
+            if needs_downloading(LIBRARY_RUN_FASTQS[wc.library][wc.run], 0)
+            else LIBRARY_RUN_FASTQS[wc.library][wc.run][0]),
+        fastq2=lambda wc: (
+            'downloaded_fastqs/{}.{}.2.fastq.gz'.format(wc.library, wc.run)
+            if needs_downloading(LIBRARY_RUN_FASTQS[wc.library][wc.run], 1)
+            else LIBRARY_RUN_FASTQS[wc.library][wc.run][1]),
     params:
         chunksize=expand("{chunksize}", chunksize=4*config['chunksize']),
         library=lambda wc: wc.library,
@@ -56,8 +99,14 @@ rule map_chunks:
 
 rule map_runs:
     input:
-        fastq1=lambda wc: LIBRARY_RUN_FASTQS[wc.library][wc.run][0],
-        fastq2=lambda wc: LIBRARY_RUN_FASTQS[wc.library][wc.run][1],
+        fastq1=lambda wc: (
+            'downloaded_fastqs/{}.{}.1.fastq.gz'.format(wc.library, wc.run)
+            if needs_downloading(LIBRARY_RUN_FASTQS[wc.library][wc.run], 0)
+            else LIBRARY_RUN_FASTQS[wc.library][wc.run][0]),
+        fastq2=lambda wc: (
+            'downloaded_fastqs/{}.{}.2.fastq.gz'.format(wc.library, wc.run)
+            if needs_downloading(LIBRARY_RUN_FASTQS[wc.library][wc.run], 1)
+            else LIBRARY_RUN_FASTQS[wc.library][wc.run][1]),
         index_fasta=expand('{index}', index=config['genome']['fasta_path']),
         index_other=expand('{index}.{res}', 
                            index=config['genome']['fasta_path'],

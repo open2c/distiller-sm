@@ -15,8 +15,8 @@ mkdir -p ${PROJECT_DIR}/fastq/MATa_R2/lane1/
 
 cd ${PROJECT_DIR}/fastq/MATalpha_R1/lane1/
 fastq-dump -F -X 100000 SRR2601842 --split-files --gzip
-cd ${PROJECT_DIR}/fastq/MATalpha_R1/lane2/
-fastq-dump -F -X 100000 SRR2601843 --split-files --gzip
+#cd ${PROJECT_DIR}/fastq/MATalpha_R1/lane2/
+#fastq-dump -F -X 100000 SRR2601843 --split-files --gzip
 cd ${PROJECT_DIR}/fastq/MATalpha_R2/lane1/
 fastq-dump -F -X 100000 SRR2601845 --split-files --gzip
 cd ${PROJECT_DIR}/fastq/MATa_R1/lane1/

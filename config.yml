@@ -2,30 +2,29 @@ project: "test"
 
 project_folder: 'test/' # either absolute or relative to the current working directory!
 
-fastq_paths: 'fastq/' # either absolute or relative to the project folder!
+#fastq_paths: 'fastq/' # either absolute or relative to the project folder!
 
 # Alternatively, fastqs can be specified as either paths relative to the 
 # project folder or as absolute paths.
-#fastq_paths:
-#    MATalpha_R1:
-#        lane1:
-#            - fastq/MATalpha_R1/lane1/SRR2601842_1.fastq.gz
-#            - fastq/MATalpha_R1/lane1/SRR2601842_2.fastq.gz
-#        lane2:
-#            - fastq/MATalpha_R1/lane2/SRR2601843_1.fastq.gz
-#            - fastq/MATalpha_R1/lane2/SRR2601843_2.fastq.gz
-#    MATalpha_R2:
-#        lane1:
-#            - fastq/MATalpha_R2/lane1/SRR2601845_1.fastq.gz
-#            - fastq/MATalpha_R2/lane1/SRR2601845_2.fastq.gz
-#    MATa_R1:
-#        lane1:
-#            - fastq/MATa_R1/lane1/SRR2601848_1.fastq.gz
-#            - fastq/MATa_R1/lane1/SRR2601848_2.fastq.gz
-#    MATa_R2:
-#        lane1:
-#            - fastq/MATa_R2/lane1/SRR2601851_1.fastq.gz
-#            - fastq/MATa_R2/lane1/SRR2601851_2.fastq.gz
+fastq_paths:
+    MATalpha_R1:
+        lane1:
+            - fastq/MATalpha_R1/lane1/SRR2601842_1.fastq.gz
+            - fastq/MATalpha_R1/lane1/SRR2601842_2.fastq.gz
+        lane2:
+            - sra:SRR2601843?start=0&end=100000
+    MATalpha_R2:
+        lane1:
+            - fastq/MATalpha_R2/lane1/SRR2601845_1.fastq.gz
+            - fastq/MATalpha_R2/lane1/SRR2601845_2.fastq.gz
+    MATa_R1:
+        lane1:
+            - fastq/MATa_R1/lane1/SRR2601848_1.fastq.gz
+            - fastq/MATa_R1/lane1/SRR2601848_2.fastq.gz
+    MATa_R2:
+        lane1:
+            - fastq/MATa_R2/lane1/SRR2601851_1.fastq.gz
+            - fastq/MATa_R2/lane1/SRR2601851_2.fastq.gz
 
 library_groups:
     MATalpha:

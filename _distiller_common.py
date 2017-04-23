@@ -1,6 +1,18 @@
 import os, pathlib
 
 
+def needs_downloading(fastq_files, side):
+    if len(fastq_files) == 1 and fastq_files[0].startswith('sra:'):
+        return True
+    elif (fastq_files[side].startswith('sra:') 
+        or fastq_files[side].startswith('http://') 
+        or fastq_files[side].startswith('ftp://')):
+        return True
+    else:
+        return False
+
+
+
 def parse_fastq_folder(root_folder_path):
     library_run_fastqs = {}
     fastq_root_folder = pathlib.Path(root_folder_path)
@@ -27,7 +39,7 @@ def check_fastq_dict_structure(library_run_fastqs):
         if not isinstance(run_dict, dict):
             return False
         for run, fastq_files in run_dict.items():
-            if (not isinstance(fastq_list, list) or (len(fastq_list) != 2)):
+            if (not isinstance(fastq_files, list) or (len(fastq_files) > 2)):
                 return False
     return True
 
@@ -35,7 +47,7 @@ def check_fastq_dict_structure(library_run_fastqs):
 def organize_fastqs(config):
     if isinstance(config['fastq_paths'], str):
         library_run_fastqs = parse_fastq_folder(config['fastq_paths'])
-    elif isinstance(config['fastqs'], dict):
+    elif isinstance(config['fastq_paths'], dict):
         if not check_fastq_dict_structure(config['fastq_paths']):
             raise Exception(
                 'An unknown format for library_fastqs! Please provide it as either '
