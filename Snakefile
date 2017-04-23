@@ -120,15 +120,16 @@ rule map_chunks:
     input:
         fastq1='fastq_chunks/{library}.{run}.{chunk_id}.1.fastq.gz',
         fastq2='fastq_chunks/{library}.{run}.{chunk_id}.2.fastq.gz',
-        index_fasta=expand('{index}', index=config['genome']['fasta_path']),
-        index_other=expand('{index}.{res}', 
-                           index=config['genome']['fasta_path'],
+        index_bwa=expand('{index}.{res}', 
+                           index=config['genome']['bwa_index_basepath'],
                            res=['amb', 'ann', 'bwt', 'pac', 'sa'])
+    params:
+        bwa_index_basepath=config['genome']['bwa_index_basepath'],
     output:
         "sam/chunks/{library}.{run}.{chunk_id}.bam"
     shell: 
         """
-        bwa mem -SP {input.index_fasta} {input.fastq1} {input.fastq2} \
+        bwa mem -SP {params.bwa_index_basepath} {input.fastq1} {input.fastq2} \
             | samtools view -bS > {output}
         """
 
@@ -143,14 +144,18 @@ rule map_runs:
             'downloaded_fastqs/{}.{}.2.fastq.gz'.format(wc.library, wc.run)
             if needs_downloading(LIBRARY_RUN_FASTQS[wc.library][wc.run], 1)
             else LIBRARY_RUN_FASTQS[wc.library][wc.run][1]),
-        index_fasta=expand('{index}', index=config['genome']['fasta_path']),
-        index_other=expand('{index}.{res}', 
-                           index=config['genome']['fasta_path'],
+        index_bwa=expand('{index}.{res}', 
+                           index=config['genome']['bwa_index_basepath'],
                            res=['amb', 'ann', 'bwt', 'pac', 'sa'])
+    params:
+        bwa_index_basepath=config['genome']['bwa_index_basepath'],
     output:
         "sam/runs/{library}.{run}.bam"
     shell: 
-        "bwa mem -SP {input.index_fasta} {input.fastq1} {input.fastq2} | samtools view -bS > {output}"
+        """
+        bwa mem -SP {params.bwa_index_basepath} {input.fastq1} {input.fastq2} \
+            | samtools view -bS > {output}
+        """
 
 
 rule parse_runs:

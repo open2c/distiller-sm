@@ -41,7 +41,7 @@ library_groups:
 
 genome:
     assembly: 'sacCer3'
-    fasta_path: 'genome/sacCer3.fa.gz'
+    bwa_index_basepath: 'genome/sacCer3.fa.gz'
     chrom_sizes_path: 'genome/sacCer3.chrom.sizes'
 
 #chunksize: 0
