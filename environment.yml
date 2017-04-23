@@ -13,7 +13,7 @@ dependencies:
     - numpy 
     - nose 
     - pbgzip
-    - sra-tools 
+    - sra-tools>=2.8.1
     - fastqc
     - pip:
         - git+git://github.com/mirnylab/pairsamtools

@@ -103,8 +103,8 @@ rule chunk_runs:
         library=lambda wc: wc.library,
         run=lambda wc: wc.run,
     output:
-        chunk1=temp(dynamic('fastq_chunks/{library}.{run}.{chunk_id}.1.fastq.gz')),
-        chunk2=temp(dynamic('fastq_chunks/{library}.{run}.{chunk_id}.2.fastq.gz')),
+        chunk1=dynamic('fastq_chunks/{library}.{run}.{chunk_id}.1.fastq.gz'),
+        chunk2=dynamic('fastq_chunks/{library}.{run}.{chunk_id}.2.fastq.gz'),
     shell:
         """
         zcat {input.fastq1} | split -l {params.chunksize} -d \
