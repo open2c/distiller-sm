@@ -67,6 +67,8 @@ rule fastqc:
         side=lambda wc: wc.side,
     output:
         fastqc='fastqc/{library}.{run}.{side}_fastqc.html',
+    benchmark:
+        "benchmarks/fastqc.{library}.{run}.{side}.tsv"
     run:
         with tempfile.TemporaryDirectory() as tmpdirname:
             if input.fastq.startswith('downloaded_fastqs/'):
@@ -105,6 +107,8 @@ rule chunk_runs:
     output:
         chunk1=dynamic('fastq_chunks/{library}.{run}.{chunk_id}.1.fastq.gz'),
         chunk2=dynamic('fastq_chunks/{library}.{run}.{chunk_id}.2.fastq.gz'),
+    benchmark:
+        "benchmarks/chunk_runs.{library}.{run}.tsv"
     shell:
         """
         zcat {input.fastq1} | split -l {params.chunksize} -d \
@@ -127,6 +131,8 @@ rule map_chunks:
         bwa_index_basepath=config['genome']['bwa_index_basepath'],
     output:
         "sam/chunks/{library}.{run}.{chunk_id}.bam"
+    benchmark:
+        "benchmarks/map_chunks.{library}.{run}.{chunk_id}.tsv"
     shell: 
         """
         bwa mem -SP {params.bwa_index_basepath} {input.fastq1} {input.fastq2} \
@@ -151,6 +157,8 @@ rule map_runs:
         bwa_index_basepath=config['genome']['bwa_index_basepath'],
     output:
         "sam/runs/{library}.{run}.bam"
+    benchmark:
+        "benchmarks/map_runs.{library}.{run}.tsv"
     shell: 
         """
         bwa mem -SP {params.bwa_index_basepath} {input.fastq1} {input.fastq2} \
@@ -169,6 +177,8 @@ rule parse_runs:
         assembly=config['genome']['assembly']
     output:
         "pairsam/runs/{library}.{run}.pairsam.gz"
+    benchmark:
+        "benchmarks/parse_runs.{library}.{run}.tsv"
     run: 
         if config.get('chunksize', 0):
             shell(
@@ -191,6 +201,8 @@ rule make_run_stats:
         "pairsam/runs/{library}.{run}.pairsam.gz"
     output:
         "stats/runs/{library}.{run}.stats.tsv"
+    benchmark:
+        "benchmarks/make_run_stats.{library}.{run}.tsv"
     shell:
         "pairsamtools stats {input} -o {output}"
 
@@ -210,6 +222,8 @@ rule merge_runs_into_libraries:
     output:
         pairsam="pairsam/libraries/{library}.pairsam.gz",
         stats="stats/libraries/{library}.stats.tsv",
+    benchmark:
+        "benchmarks/merge_runs_into_libraries.{library}.tsv"
     shell:
         """
         pairsamtools merge {input.pairsams} -o {output.pairsam}
@@ -229,6 +243,8 @@ rule make_pairs_bams:
         nodups_sam=   "sam/libraries/{library}.nodups.bam",
         unmapped_sam= "sam/libraries/{library}.unmapped.bam",
         dups_sam=     "sam/libraries/{library}.dups.bam",
+    benchmark:
+        "benchmarks/make_pairs_bams.{library}.tsv"
     run:
         if config.get('drop_sam', False):
             shell("""
@@ -282,6 +298,8 @@ rule index_pairs:
         "pairs/libraries/{library}.nodups.pairs.gz"
     output:
         "pairs/libraries/{library}.nodups.pairs.gz.px2"
+    benchmark:
+        "benchmarks/index_pairs.{library}.tsv"
     shell: 
         "pairix {input}"
 
@@ -297,6 +315,8 @@ rule make_library_coolers:
         assembly=expand("{assembly}", assembly=config['genome']['assembly'])
     output:
         "coolers/libraries/{library}.{res}.cool"
+    benchmark:
+        "benchmarks/make_library_coolers.{library}.{res}.tsv"
     shell:
         """
         cooler cload pairix \
@@ -318,6 +338,8 @@ rule merge_library_group_stats:
 
     output:
         stats="stats/library_groups/{library_group}.stats.tsv"
+    benchmark:
+        "benchmarks/merge_library_group_stats.{library_group}.tsv"
     shell:
         """
         pairsamtools stats --merge {input.stats} {input.stats_dedup} -o {output.stats}
@@ -332,6 +354,8 @@ rule make_library_group_coolers:
             res=wc.res),
     output:
         cooler="coolers/library_groups/{library_group}.{res}.cool",
+    benchmark:
+        "benchmarks/make_library_group_coolers.{library_group}.{res}.tsv"
     shell:
         """
         cooler merge {output.cooler} {input.coolers}
