@@ -13,6 +13,7 @@ dependencies:
     - numpy 
     - nose 
     - pbgzip
+    - samtools>=1.4
     - sra-tools>=2.8.1
     - fastqc
     - pip:
