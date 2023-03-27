@@ -2,10 +2,10 @@ PROJECT_DIR=$(pwd)/test
 
 mkdir -p ${PROJECT_DIR}/genome
 cd ${PROJECT_DIR}/genome
-wget http://hgdownload-test.cse.ucsc.edu/goldenPath/sacCer3/bigZips/sacCer3.chrom.sizes
-wget http://hgdownload-test.cse.ucsc.edu/goldenPath/sacCer3/bigZips/chromFa.tar.gz
-{ tar -O -xf chromFa.tar.gz && rm chromFa.tar.gz; } | bgzip -c > sacCer3.fa.gz
-bwa index sacCer3.fa.gz
+wget --no-check-certificate http://hgdownload-test.cse.ucsc.edu/goldenPath/sacCer3/bigZips/sacCer3.chrom.sizes
+wget --no-check-certificate http://hgdownload-test.cse.ucsc.edu/goldenPath/sacCer3/bigZips/chromFa.tar.gz
+{ tar -O -xf chromFa.tar.gz && rm chromFa.tar.gz; } | gzip -c > sacCer3.fa.gz
+# bwa index sacCer3.fa.gz
 
 mkdir -p ${PROJECT_DIR}/fastq/MATalpha_R1/lane1/
 mkdir -p ${PROJECT_DIR}/fastq/MATalpha_R1/lane2/

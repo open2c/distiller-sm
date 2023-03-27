@@ -1,0 +1,580 @@
+from pathlib import Path
+import yaml
+from urllib.parse import urlparse
+from common import organize_fastqs, needs_downloading
+
+
+# configfile: "config/config.yml"
+
+
+# localrules:
+#     rename_downloaded_fastq,
+
+downloaded_fastqs_folder = config["output"]["dirs"]["downloaded_fastqs"]
+processed_fastqs_folder = config["output"]["dirs"]["processed_fastqs"]
+mapped_parsed_sorted_chunks_folder = config["output"]["dirs"][
+    "mapped_parsed_sorted_chunks"
+]
+fastqc_folder = config["output"]["dirs"]["fastqc"]
+pairs_library_folder = config["output"]["dirs"]["pairs_library"]
+coolers_library_folder = config["output"]["dirs"]["coolers_library"]
+coolers_library_group_folder = config["output"]["dirs"]["coolers_library_group"]
+stats_library_group_folder = config["output"]["dirs"]["stats_library_group"]
+
+assembly = config["input"]["genome"]["assembly_name"]
+# custom_genome_folder = Path(config["genome"]["custom_genome_path"]).parent
+chromsizes = config["input"]["genome"]["chrom_sizes_path"]
+
+LIBRARY_RUN_FASTQS = organize_fastqs(config)
+runs = [list(LIBRARY_RUN_FASTQS[lib].keys()) for lib in LIBRARY_RUN_FASTQS.keys()]
+runs = [item for sublist in runs for item in sublist]
+
+min_resolution = min(config["bin"]["resolutions"])
+
+library_group_coolers = []
+library_group_stats = []
+if "library_groups" in config and len(config["library_groups"]) > 0:
+    library_group_coolers = expand(
+        f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
+        library=config["input"]["library_groups"].keys(),
+        filter_name=list(config["bin"]["filters"].keys()),
+    )
+    library_group_stats = expand(
+        f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
+        library=config["input"]["library_groups"].keys(),
+    )
+library_coolers = expand(
+    f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
+    library=LIBRARY_RUN_FASTQS.keys(),
+    filter_name=list(config["bin"]["filters"].keys()),
+)
+fastqc = []
+if config["do_fastqc"]:
+    for library in LIBRARY_RUN_FASTQS:
+        fastqc += expand(
+            f"{fastqc_folder}/{library}.{{run}}.{{side}}_fastqc.html",
+            run=LIBRARY_RUN_FASTQS[library].keys(),
+            side=[1, 2],
+        )
+
+
+rule default:
+    input:
+        library_group_coolers,
+        library_group_stats,
+        library_coolers,
+        fastqc,
+
+
+wildcard_constraints:
+    library=f"({'|'.join([re.escape(lib) for lib in LIBRARY_RUN_FASTQS.keys()])})",
+    library_group=f"({'|'.join([re.escape(lib) for lib in config['input']['library_groups'].keys()])})",
+    run=f"({'|'.join([re.escape(run) for run in runs])})",
+    chunk_id="[0-9]+",
+
+
+def get_start_end(query):
+    start, end = 0, None
+    if query:
+        for kv_pair in query.split("&"):
+            k, v = kv_pair.split("=")
+            if k == "start":
+                start = v
+            if k == "end":
+                end = v
+    return start, end
+
+
+# fasterq_dump_extra = {}
+# fastq_accession_dict = {}
+# for library in LIBRARY_RUN_FASTQS:
+#     fastq_accession_dict[library] = {}
+#     for run in LIBRARY_RUN_FASTQS[library]:
+#         paths = LIBRARY_RUN_FASTQS[library][run]
+#         if len(paths) == 1 and paths[0].startswith("sra:"):
+#             parsed = urlparse(paths[0])
+#             srr, query = parsed.path, parsed.query
+#             if query:
+#                 start, end = get_start_end(query)
+#                 fasterq_dump_extra[srr] = f"--minSpotId {start}" if start else ""
+#                 fasterq_dump_extra[srr] += f" --maxSpotId {end}" if end else ""
+#             fastq_accession_dict[library][run] = srr
+
+
+# rule fasterq_dump:
+#     output:
+#         # the wildcard name must be accession, pointing to an SRA number
+#         temp(f"{downloaded_fastqs_folder}/{{accession}}_1.fastq.gz"),
+#         temp(f"{downloaded_fastqs_folder}/{{accession}}_2.fastq.gz"),
+#     log:
+#         "logs/fasterq_dump/{accession}.log",
+#     params:
+#         extra=lambda wildcards: fasterq_dump_extra[wildcards.accession],
+#     threads: 4
+#     wrapper:
+#         "v1.25.0/bio/sra-tools/fasterq-dump"
+
+
+# rule rename_downloaded_fastq:
+#     input:
+#         fastq1=lambda wildcards: f"{downloaded_fastqs_folder}/{fastq_accession_dict[wildcards.library][wildcards.run]}_1.fastq.gz",
+#         fastq2=lambda wildcards: f"{downloaded_fastqs_folder}/{fastq_accession_dict[wildcards.library][wildcards.run]}_2.fastq.gz",
+#     output:
+#         fastq1=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.1.fastq.gz",
+#         fastq2=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.2.fastq.gz",
+#     shell:
+#         """
+#         mv {input.fastq1} {output.fastq1}
+#         mv {input.fastq2} {output.fastq2}
+#         """
+rule download_fastqs:
+    # Convert rule to shell to allow conda env...
+    # conda:
+    #     "envs/download_fastqs.yml"
+    output:
+        fastq1=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.1.fastq.gz",
+        fastq2=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.2.fastq.gz",
+    run:
+        fastq_files = LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run]
+        if (len(fastq_files) == 1) and (fastq_files[0].startswith("sra:")):
+            parsed = urlparse(fastq_files[0])
+            srr, query = parsed.path, parsed.query
+            start, end = get_start_end(query)
+
+            shell(
+                f"""fastq-dump --origfmt --split-files --gzip \
+                    -O {downloaded_fastqs_folder} {srr} \
+                    {f'--minSpotId {start}' if start else ''} \
+                    {f'--maxSpotId {end}' if end else ''}
+
+                    mv {downloaded_fastqs_folder}/{srr}_1.fastq.gz {output.fastq1}
+                    mv {downloaded_fastqs_folder}/{srr}_2.fastq.gz {output.fastq2}
+
+                    """
+            )
+
+
+if config["map"]["chunksize"] > 0:
+
+    ruleorder: chunk_fastq > copy_fastq
+
+else:
+
+    ruleorder: copy_fastq > chunk_fastq
+
+
+checkpoint chunk_fastq:
+    input:
+        fastq1=lambda wildcards: (
+            f"{downloaded_fastqs_folder}/{wildcards.library}.{wildcards.run}.1.fastq.gz"
+            if needs_downloading(
+                LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run], 0
+            )
+            else LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run][0]
+        ),
+        fastq2=lambda wildcards: (
+            f"{downloaded_fastqs_folder}/{wildcards.library}.{wildcards.run}.2.fastq.gz"
+            if needs_downloading(
+                LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run], 1
+            )
+            else LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run][1]
+        ),
+    params:
+        chunksize=lambda wildcards: config["map"]["chunksize"] * 4,
+    threads: 4
+    output:
+        directory(f"{processed_fastqs_folder}/{{library}}/{{run}}"),
+    benchmark:
+        "benchmarks/chunk_runs/{library}.{run}.tsv"
+    shell:
+        """
+        mkdir -p {output};
+        zcat {input.fastq1} | split -l {params.chunksize} -d \
+            --filter 'bgzip -c -@ {threads} > $FILE.fastq.gz' - \
+            {output}/1.
+        zcat {input.fastq2} | split -l {params.chunksize} -d \
+            --filter 'bgzip -c -@ {threads} > $FILE.fastq.gz' - \
+            {output}/2.
+        """
+
+
+checkpoint copy_fastq:
+    input:
+        fastq1=lambda wildcards: (
+            f"{downloaded_fastqs_folder}/{wildcards.library}.{wildcards.run}.1.fastq.gz"
+            if needs_downloading(
+                LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run], 0
+            )
+            else LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run][0]
+        ),
+        fastq2=lambda wildcards: (
+            f"{downloaded_fastqs_folder}/{wildcards.library}.{wildcards.run}.2.fastq.gz"
+            if needs_downloading(
+                LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run], 1
+            )
+            else LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run][1]
+        ),
+    threads: 1
+    output:
+        directory(f"{processed_fastqs_folder}/{{library}}/{{run}}"),
+    shell:
+        """
+        mkdir -p {output}
+        cp {input.fastq1} {output}/1.00.fastq.gz
+        cp {input.fastq2} {output}/2.00.fastq.gz
+        """
+
+
+rule fastqc:
+    input:
+        fastq1=lambda wildcards: (
+            f"downloaded_fastqs/{wildcards.library}.{wildcards.run}.{wildcards.side}.fastq.gz"
+            if needs_downloading(
+                LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run],
+                int(wildcards.side) - 1,
+            )
+            else LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run][
+                int(wildcards.side) - 1
+            ]
+        ),
+    output:
+        fastqc=f"{fastqc_folder}/{{library}}.{{run}}.{{side}}_fastqc.html",
+    log:
+        "logs/fastqc/{library}.{run}.{side}.log",
+    benchmark:
+        "benchmarks/fastqc/{library}.{run}.{side}.tsv"
+    threads: 1
+    wrapper:
+        "v1.25.0/bio/fastqc"
+
+
+if config["map"]["mapper"] == "bwa-mem":
+
+    idx = multiext(
+        config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*"),
+        ".amb",
+        ".ann",
+        ".bwt",
+        ".pac",
+        ".sa",
+    )
+
+else:
+
+    idx = multiext(
+        config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*"),
+        ".0123",
+        ".amb",
+        ".ann",
+        ".bwt.2bit.64",
+        ".pac",
+    )
+
+
+rule bwaindex:
+    input:
+        genome=config["input"]["genome"]["genome_fasta_path"],
+    output:
+        idx=idx,
+    params:
+        bwa=config["map"]["mapper"],
+    log:
+        f"logs/bwa-memx_index/{assembly}.log",
+    wrapper:
+        "v1.25.0/bio/bwa-memx/index"
+
+
+# rule faidx:
+#     input:
+#         genome_custom=config["input"]["genome"]["genome_fasta_path"],
+#     output:
+#         genome_faidx=f"{config['input']['genome']['genome_fasta_path']}.fai",
+#     log:
+#         f"logs/faidx/{assembly}.log",
+#     params:
+#         extra="",  # optional params string
+#     wrapper:
+#         "v1.25.0/bio/samtools/index"
+
+
+# rule make_chromsizes:
+#     input:
+#         genome_faidx=f"{config['input']['genome']['genome_fasta_path']}.fai",
+#     output:
+#         chromsizes=chromsizes,
+#     shell:
+#         "cut -f1,2 {input.genome_faidx} > {output.chromsizes}"
+
+
+if config["parse"]["keep_unparsed_bams"]:
+
+    # mapped_output = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
+    ruleorder: map_chunks_bwa > map_chunks_bwa_pipe
+
+else:
+
+    # mapped_output = pipe(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"),
+    ruleorder: map_chunks_bwa_pipe > map_chunks_bwa
+
+
+rule map_chunks_bwa:
+    input:
+        reads=[
+            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
+            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
+        ],
+        reference=config["input"]["genome"]["genome_fasta_path"],
+        idx=idx,
+    params:
+        bwa=config["map"]["mapper"],
+        extra="-SP",
+        sort="none",
+        dedup="none",
+    threads: 4
+    output:
+        f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
+    log:
+        "logs/bwa_memx/{library}.{run}.{chunk_id}.log",
+    benchmark:
+        "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.tsv"
+    wrapper:
+        "v1.25.0/bio/bwa-memx/mem"
+
+
+rule map_chunks_bwa_pipe:
+    input:
+        reads=[
+            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
+            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
+        ],
+        reference=config["input"]["genome"]["genome_fasta_path"],
+        idx=idx,
+    params:
+        bwa=config["map"]["mapper"],
+        extra="-SP",
+        sort="none",
+        dedup="none",
+    threads: 4
+    output:
+        pipe(
+            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"
+        ),
+    log:
+        "logs/bwa_memx/{library}.{run}.{chunk_id}.log",
+    benchmark:
+        "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.tsv"
+    wrapper:
+        "v1.25.0/bio/bwa-memx/mem"
+
+
+rule parse_sort_chunks:
+    input:
+        bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
+        chromsizes=chromsizes,
+    threads: 4
+    params:
+        dropsam_flag="--drop-sam" if config["parse"].get("drop_sam", False) else "",
+        dropreadid_flag="--drop-readid"
+        if config["parse"].get("drop_readid", False)
+        else "",
+        dropseq_flag="--drop-seq" if config["parse"].get("drop_seq", True) else "",
+        parsing_options=config["parse"].get("parsing_options", ""),
+        # keep_bams_command=f"| tee >(samtools view -bS > {mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam)"
+        # if config["parse"]["keep_unparsed_bams"]
+        # else "",
+    conda:
+        "envs/pairtools_cooler.yml"
+    output:
+        f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.pairs.gz",
+    benchmark:
+        "benchmarks/parse_sort_chunks/{library}.{run}.{chunk_id}.tsv"
+    log:
+        "logs/parse_sort_chunks/{library}.{run}.{chunk_id}.tsv",
+    shell:
+        """
+        pairtools parse {params.dropsam_flag} {params.dropreadid_flag} {params.dropseq_flag} \
+        {params.parsing_options} \
+        -c {input.chromsizes} {input.bam} \
+        | pairtools sort --nproc {threads} -o {output}\
+        """
+
+
+def get_pair_chunks(wildcards):
+    checkpoint_output = checkpoints.chunk_fastq.get(**wildcards).output
+    chunk_ids = glob_wildcards(
+        f"{processed_fastqs_folder}/{wildcards.library}/{wildcards.run}/2.{{chunk_id}}.fastq.gz",
+    ).chunk_id
+    paths = expand(
+        f"{mapped_parsed_sorted_chunks_folder}/{wildcards.library}/{wildcards.run}/{{chunk_id}}.{assembly}.pairs.gz",
+        chunk_id=chunk_ids,
+    )
+    return paths
+
+
+rule merge_runs:
+    input:
+        get_pair_chunks,
+    threads: 4
+    conda:
+        "envs/pairtools_cooler.yml"
+    output:
+        f"results/parsed_runs/{{library}}/{{run}}.{assembly}.pairs.gz",
+    log:
+        "logs/merge_runs/{library}.{run}.tsv",
+    benchmark:
+        "benchmarks/merge_runs/{library}.{run}.tsv"
+    shell:
+        "pairtools merge {input} --nproc {threads} -o {output}"
+
+
+rule merge_dedup:
+    input:
+        pairs=lambda wildcards: expand(
+            f"results/parsed_runs/{wildcards.library}/{{run}}.{assembly}.pairs.gz",
+            run=list(LIBRARY_RUN_FASTQS[wildcards.library].keys()),
+        ),
+    params:
+        dedup_options=lambda wildcards: config["dedup"].get("dedup_options", ""),
+        max_mismatch_bp=config["dedup"]["max_mismatch_bp"],
+    threads: 4
+    conda:
+        "envs/pairtools_cooler.yml"
+    output:
+        multiext(
+            f"{pairs_library_folder}/{{library}}.{assembly}",
+            ".nodups.pairs.gz",
+            ".unmapped.pairs.gz",
+            ".dups.pairs.gz",
+            ".dedup.stats",
+        ),
+    log:
+        "logs/merge_dedup/{library}.tsv",
+    benchmark:
+        "benchmarks/merge_dedup/{library}.tsv"
+    shell:
+        """pairtools merge {input.pairs} --nproc {threads} | pairtools dedup {params.dedup_options} \
+            --max-mismatch {params.max_mismatch_bp} \
+            --mark-dups \
+            --output {output[0]} \
+            --output-unmapped {output[1]} \
+            --output-dups {output[2]} \
+            --output-stats {output[3]} \
+            
+            pairix {output[0]}
+        """
+        # For pairsam
+        # f"""pairtools merge {{input.pairs}} --nproc {{threads}} | pairtools dedup {{params.dedup_options}} \
+        #     --max-mismatch {config['dedup']['max_mismatch_bp']} \
+        #     --mark-dups \
+        #     --output \
+        #         >( pairtools split \
+        #             --output-pairs {{output[0]}} \
+        #             --output-sam {{output[1]}} \
+        #          ) \
+        #     --output-unmapped \
+        #         >( pairtools split \
+        #             --output-pairs {{output[2]}} \
+        #             --output-sam {{output[3]}} \
+        #          ) \
+        #     --output-dups \
+        #         >( pairtools split \
+        #             --output-pairs {{output[4]}} \
+        #             --output-sam {{output[5]}} \
+        #          ) \
+        #     --output-stats {{output[6]}} \
+        #     -
+        # pairix {{output[0]}}
+        # """
+
+
+balance_args = "--balance" if {config["bin"].get("balance", True)} else ""
+balance_options = config["bin"].get("balance_options", "")
+if balance_args and balance_options:
+    balance_args = f"{balance_args} {balance_options}"
+
+
+rule bin_zoom_pairs_library:
+    input:
+        pairs=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.pairs.gz",
+        chromsizes=chromsizes,
+    params:
+        res_string=",".join([str(res) for res in config["bin"]["resolutions"]]),
+        filter_command=lambda wildcards: f'| pairtools select "{config["bin"]["filters"][wildcards.filter_name]}"'
+        if config["bin"]["filters"][wildcards.filter_name]
+        else "",
+    threads: 8
+    conda:
+        "envs/pairtools_cooler.yml"
+    output:
+        cool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.cool",
+        mcool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
+    log:
+        "logs/bin_zoom_pairs_library/{library}.{filter_name}.{min_resolution}.tsv",
+    benchmark:
+        "benchmarks/bin_zoom_pairs_library/{library}.{filter_name}.{min_resolution}.tsv"
+    shell:
+        f"""
+        zcat {{input.pairs}} {{params.filter_command}} | cooler cload pairs \
+        -c1 2 -p1 3 -c2 4 -p2 5 \
+        --assembly {assembly} \
+        {{input.chromsizes}}:{{wildcards.min_resolution}} \
+        - \
+        {{output.cool}}
+
+        cooler zoomify \
+        --nproc {{threads}} \
+        --out {{output.mcool}} \
+        --resolutions {{params.res_string}} \
+        {balance_args} \
+        {{output.cool}}
+        """
+
+
+rule merge_zoom_library_group_coolers:
+    input:
+        lambda wildcards: expand(
+            f"{coolers_library_folder}/{{library}}.{assembly}.{wildcards.filter_name}.{wildcards.min_resolution}.cool",
+            library=config["input"]["library_groups"][wildcards.library_group],
+        ),
+    params:
+        res_string=",".join([str(res) for res in config["bin"]["resolutions"]]),
+        balance_options=f"--balance-args {config['bin'].get('balance_options', '')}",
+        balance_flag="--balance "
+        + f"--balance-args {config['bin'].get('balance_options', '')}"
+        if {config["bin"].get("balance", True)}
+        else "",
+    threads: 8
+    conda:
+        "envs/pairtools_cooler.yml"
+    output:
+        cool=f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.cool",
+        mcool=f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
+    log:
+        "logs/merge_zoom_library_group_coolers/{library_group}.{filter_name}.{min_resolution}.tsv",
+    benchmark:
+        "benchmarks/merge_zoom_library_group_coolers/{library_group}.{filter_name}.{min_resolution}.tsv"
+    shell:
+        f"""
+        cooler merge {{input}} {{output.cool}}
+
+        cooler zoomify \
+        --nproc {{threads}} \
+        --out {{output.mcool}} \
+        --resolutions {{params.res_string}} \
+        {balance_args} \
+        {{output.cool}}
+        """
+
+
+rule merge_stats_libraries_into_groups:
+    input:
+        lambda wildcards: expand(
+            f"{pairs_library_folder}/{{library}}.{assembly}.dedup.stats",
+            library=config["input"]["library_groups"][wildcards.library_group],
+        ),
+    conda:
+        "envs/pairtools_cooler.yml"
+    output:
+        f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
+    shell:
+        "pairtools stats --merge {input} -o {output}"

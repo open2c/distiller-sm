@@ -1,0 +1,10 @@
+name: distiller-sm
+channels:
+    - conda-forge               
+    - defaults                  
+    - bioconda                  
+dependencies:
+    - python>=3.8,<3.11
+    - snakemake
+    - sra-tools
+    - tabix

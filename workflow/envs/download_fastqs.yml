@@ -1,0 +1,6 @@
+name: download_fastqs_env
+channels:
+  - bioconda
+  - defaults
+dependencies:
+  - sra-tools
