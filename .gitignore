@@ -89,3 +89,7 @@ ENV/
 .ropeproject
 
 .snakemake
+benchmarks
+logs
+results
+test
