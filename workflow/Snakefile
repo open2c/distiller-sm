@@ -7,15 +7,17 @@ from common import organize_fastqs, needs_downloading
 # configfile: "config/config.yml"
 
 
-# localrules:
-#     rename_downloaded_fastq,
+localrules:
+    merge_stats_libraries_into_groups,
+
 
 downloaded_fastqs_folder = config["output"]["dirs"]["downloaded_fastqs"]
 processed_fastqs_folder = config["output"]["dirs"]["processed_fastqs"]
+fastqc_folder = config["output"]["dirs"]["fastqc"]
 mapped_parsed_sorted_chunks_folder = config["output"]["dirs"][
     "mapped_parsed_sorted_chunks"
 ]
-fastqc_folder = config["output"]["dirs"]["fastqc"]
+pairs_runs_folder = config["output"]["dirs"]["pairs_runs"]
 pairs_library_folder = config["output"]["dirs"]["pairs_library"]
 coolers_library_folder = config["output"]["dirs"]["coolers_library"]
 coolers_library_group_folder = config["output"]["dirs"]["coolers_library_group"]
@@ -85,6 +87,10 @@ def get_start_end(query):
     return start, end
 
 
+# fasterq-dump just doesn't work for me on our server for some reason, but this code
+# should work as an alternative
+# Annoyingly, fasterq-dum doesn't have --gzip argument :(
+
 # fasterq_dump_extra = {}
 # fastq_accession_dict = {}
 # for library in LIBRARY_RUN_FASTQS:
@@ -127,6 +133,8 @@ def get_start_end(query):
 #         mv {input.fastq1} {output.fastq1}
 #         mv {input.fastq2} {output.fastq2}
 #         """
+
+
 rule download_fastqs:
     # Convert rule to shell to allow conda env...
     # conda:
@@ -134,6 +142,8 @@ rule download_fastqs:
     output:
         fastq1=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.1.fastq.gz",
         fastq2=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.2.fastq.gz",
+    log:
+        "logs/download_fastqs/{library}.{run}.log",
     run:
         fastq_files = LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run]
         if (len(fastq_files) == 1) and (fastq_files[0].startswith("sra:")):
@@ -341,30 +351,11 @@ rule map_chunks_bwa:
         "v1.25.0/bio/bwa-memx/mem"
 
 
-rule map_chunks_bwa_pipe:
-    input:
-        reads=[
-            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
-            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
-        ],
-        reference=config["input"]["genome"]["genome_fasta_path"],
-        idx=idx,
-    params:
-        bwa=config["map"]["mapper"],
-        extra="-SP",
-        sort="none",
-        dedup="none",
-    threads: 4
+use rule map_chunks_bwa as map_chunks_bwa_pipe with:
     output:
         pipe(
             f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"
         ),
-    log:
-        "logs/bwa_memx/{library}.{run}.{chunk_id}.log",
-    benchmark:
-        "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.tsv"
-    wrapper:
-        "v1.25.0/bio/bwa-memx/mem"
 
 
 rule parse_sort_chunks:
@@ -418,7 +409,7 @@ rule merge_runs:
     conda:
         "envs/pairtools_cooler.yml"
     output:
-        f"results/parsed_runs/{{library}}/{{run}}.{assembly}.pairs.gz",
+        f"{pairs_runs_folder}/{{library}}/{{run}}.{assembly}.pairs.gz",
     log:
         "logs/merge_runs/{library}.{run}.tsv",
     benchmark:
@@ -430,7 +421,7 @@ rule merge_runs:
 rule merge_dedup:
     input:
         pairs=lambda wildcards: expand(
-            f"results/parsed_runs/{wildcards.library}/{{run}}.{assembly}.pairs.gz",
+            f"{pairs_runs_folder}/{wildcards.library}/{{run}}.{assembly}.pairs.gz",
             run=list(LIBRARY_RUN_FASTQS[wildcards.library].keys()),
         ),
     params:

@@ -123,7 +123,7 @@ parse:
     # output of bwa in a .bam format. Could be used as a faster alternative
     # to 'make_pairsam' when alignments are needed, but tagging them with Hi-C
     # related information is not necessary.
-    keep_unparsed_bams: True
+    keep_unparsed_bams: False
 
     # Pass extra options to pairtools parse, on top of the ones specified by
     # flags 'make_pairsam', 'drop_readid', 'drop_seq'. The default value
@@ -178,9 +178,10 @@ bin:
 output:
     dirs:
         downloaded_fastqs: 'test/fastq/downloaded_fastqs'
+        fastqc: 'test/results/fastqc/'
         processed_fastqs: 'test/results/processed_fastqs'
         mapped_parsed_sorted_chunks: 'test/results/mapped_parsed_sorted_chunks'
-        fastqc: 'test/results/fastqc/'
+        pairs_runs: 'test/results/pairs_runs'
         pairs_library: 'test/results/pairs_library'
         coolers_library: 'test/results/coolers_library'
         coolers_library_group: 'test/results/coolers_library_group'
