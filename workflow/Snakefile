@@ -294,6 +294,8 @@ rule bwaindex:
         "v1.25.0/bio/bwa-memx/index"
 
 
+# faidx doesn't wotk with gzipped files :( So test fails, but probably should work
+# with .fa, need to check
 # rule faidx:
 #     input:
 #         genome_custom=config["input"]["genome"]["genome_fasta_path"],
