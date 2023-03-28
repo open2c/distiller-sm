@@ -22,8 +22,11 @@ cd distiller-sm
 mamba env create -f workflow/envs/environment.yml
 ```
 
-To check your installation, first run `sh setup_test.sh`.
-Then `snakemake --use-conda --cores $Ncores --configfile config/config.yml` should start and run the workflow with a small dataset.
+To check your installation, first run the workflow with a small test dataset.
+```
+sh setup_test.sh
+snakemake --use-conda --cores $Ncores --configfile config/config.yml
+```
 
 To setup a new project, modify the file `config/config.yml`.
 Other than your .fastq files, you'll need the sequence of your reference genome of choice and the chrom.sizes file. You need to specify the path to the basename of the bwa index (typially same as the path to the genome sequence, potentially without the extension), but `distiller-sm` can generate the index for you if it doesn't exist in the provided location.
