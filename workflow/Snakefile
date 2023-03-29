@@ -38,12 +38,12 @@ library_group_stats = []
 if "library_groups" in config and len(config["library_groups"]) > 0:
     library_group_coolers = expand(
         f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
-        library=config["input"]["library_groups"].keys(),
+        library_group=config["input"]["library_groups"].keys(),
         filter_name=list(config["bin"]["filters"].keys()),
     )
     library_group_stats = expand(
         f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
-        library=config["input"]["library_groups"].keys(),
+        library_group=config["input"]["library_groups"].keys(),
     )
 library_coolers = expand(
     f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
