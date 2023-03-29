@@ -306,7 +306,7 @@ rule bwaindex:
 #     params:
 #         extra="",  # optional params string
 #     wrapper:
-#         "v1.25.0/bio/samtools/index"
+#         "v1.25.0/bio/samtools/faidx"
 
 
 # rule make_chromsizes:
@@ -452,6 +452,7 @@ rule merge_dedup:
             --output-unmapped {output[1]} \
             --output-dups {output[2]} \
             --output-stats {output[3]} \
+            --yaml
             
             pairix {output[0]}
         """
@@ -570,4 +571,4 @@ rule merge_stats_libraries_into_groups:
     output:
         f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
     shell:
-        "pairtools stats --merge {input} -o {output}"
+        "pairtools stats --merge --yaml {input} -o {output}"
