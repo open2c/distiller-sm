@@ -549,7 +549,7 @@ rule merge_zoom_library_group_coolers:
         "benchmarks/merge_zoom_library_group_coolers/{library_group}.{filter_name}.{min_resolution}.tsv"
     shell:
         f"""
-        cooler merge {{input}} {{output.cool}}
+        cooler merge {{output.cool}} {{input}}
 
         cooler zoomify \
         --nproc {{threads}} \
