@@ -450,6 +450,65 @@ rule merge_runs:
         "pairtools merge {input} --nproc {threads} -o {output}"
 
 
+if config['parse']['make_pairsam']:
+    merge_dedup_command = f"""pairtools merge {{input.pairs}} --nproc {{threads}} | \
+        pairtools dedup {{params.dedup_options}} \
+        --max-mismatch {config['dedup']['max_mismatch_bp']} \
+        --mark-dups \
+        --output \
+            >( pairtools split \
+                --output-pairs {{output[0]}} \
+                --output-sam {{output[1]}} \
+             ) \
+        --output-unmapped \
+            >( pairtools split \
+                --output-pairs {{output[2]}} \
+                --output-sam {{output[3]}} \
+             ) \
+        --output-dups \
+            >( pairtools split \
+                --output-pairs {{output[4]}} \
+                --output-sam {{output[5]}} \
+             ) \
+        --output-stats {{output[6]}} \
+        --yaml \
+        -
+    pairix {{output[0]}}
+    """
+    merge_output = multiext(
+            f"{pairs_library_folder}/{{library}}.{assembly}",
+            ".nodups.pairs.gz",
+            ".nodups.bam",
+            ".unmapped.pairs.gz",
+            ".unmapped.bam",
+            ".dups.pairs.gz",
+            ".dups.bam",
+            ".dedup.stats",
+            ".nodups.pairs.gz.px2",
+        )
+else:
+    merge_dedup_command = """pairtools merge {input.pairs} --nproc {threads} | \
+        pairtools dedup {params.dedup_options} \
+        --max-mismatch {params.max_mismatch_bp} \
+        --mark-dups \
+        --output {output[0]} \
+        --output-unmapped {output[1]} \
+        --output-dups {output[2]} \
+        --output-stats {output[3]} \
+        --yaml
+        
+        pairix {output[0]}
+    """
+    merge_output = multiext(
+            f"{pairs_library_folder}/{{library}}.{assembly}",
+            ".nodups.pairs.gz",
+            ".unmapped.pairs.gz",
+            ".dups.pairs.gz",
+            ".dedup.stats",
+            ".nodups.pairs.gz.px2",
+        )
+
+
 rule merge_dedup:
     input:
         pairs=lambda wildcards: expand(
@@ -463,52 +522,13 @@ rule merge_dedup:
     conda:
         "envs/pairtools_cooler.yml"
     output:
-        multiext(
-            f"{pairs_library_folder}/{{library}}.{assembly}",
-            ".nodups.pairs.gz",
-            ".unmapped.pairs.gz",
-            ".dups.pairs.gz",
-            ".dedup.stats",
-        ),
+        merge_output
     log:
         "logs/merge_dedup/{library}.tsv",
     benchmark:
         "benchmarks/merge_dedup/{library}.tsv"
     shell:
-        """pairtools merge {input.pairs} --nproc {threads} | pairtools dedup {params.dedup_options} \
-            --max-mismatch {params.max_mismatch_bp} \
-            --mark-dups \
-            --output {output[0]} \
-            --output-unmapped {output[1]} \
-            --output-dups {output[2]} \
-            --output-stats {output[3]} \
-            --yaml
-            
-            pairix {output[0]}
-        """
-        # For pairsam
-        # f"""pairtools merge {{input.pairs}} --nproc {{threads}} | pairtools dedup {{params.dedup_options}} \
-        #     --max-mismatch {config['dedup']['max_mismatch_bp']} \
-        #     --mark-dups \
-        #     --output \
-        #         >( pairtools split \
-        #             --output-pairs {{output[0]}} \
-        #             --output-sam {{output[1]}} \
-        #          ) \
-        #     --output-unmapped \
-        #         >( pairtools split \
-        #             --output-pairs {{output[2]}} \
-        #             --output-sam {{output[3]}} \
-        #          ) \
-        #     --output-dups \
-        #         >( pairtools split \
-        #             --output-pairs {{output[4]}} \
-        #             --output-sam {{output[5]}} \
-        #          ) \
-        #     --output-stats {{output[6]}} \
-        #     -
-        # pairix {{output[0]}}
-        # """
+        merge_dedup_command
 
 
 balance_args = "--balance" if {config["bin"].get("balance", True)} else ""
