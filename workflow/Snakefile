@@ -167,12 +167,21 @@ rule download_fastqs:
 
 
 if config["map"]["chunksize"] > 0:
-
-    ruleorder: chunk_fastq > copy_fastq
-
+    chunk_command = """
+        mkdir -p {output};
+        zcat {input.fastq1} | split -l {params.chunksize} -d \
+            --filter 'bgzip -c -@ {threads} > $FILE.fastq.gz' - \
+            {output}/1.
+        zcat {input.fastq2} | split -l {params.chunksize} -d \
+            --filter 'bgzip -c -@ {threads} > $FILE.fastq.gz' - \
+            {output}/2.
+        """
 else:
-
-    ruleorder: copy_fastq > chunk_fastq
+    chunk_command = """
+        mkdir -p {output}
+        cp {input.fastq1} {output}/1.00.fastq.gz
+        cp {input.fastq2} {output}/2.00.fastq.gz
+        """
 
 
 checkpoint chunk_fastq:
@@ -193,48 +202,14 @@ checkpoint chunk_fastq:
         ),
     params:
         chunksize=lambda wildcards: config["map"]["chunksize"] * 4,
-    threads: 4
+    threads: lambda wildcards: 4 if config["map"]["chunksize"] > 0 else 1
+    conda: lambda wildcards: "envs/download_fastqs.yml" if config["map"]["chunksize"] > 0 else None
     output:
         directory(f"{processed_fastqs_folder}/{{library}}/{{run}}"),
     benchmark:
         "benchmarks/chunk_runs/{library}.{run}.tsv"
     shell:
-        """
-        mkdir -p {output};
-        zcat {input.fastq1} | split -l {params.chunksize} -d \
-            --filter 'bgzip -c -@ {threads} > $FILE.fastq.gz' - \
-            {output}/1.
-        zcat {input.fastq2} | split -l {params.chunksize} -d \
-            --filter 'bgzip -c -@ {threads} > $FILE.fastq.gz' - \
-            {output}/2.
-        """
-
-
-checkpoint copy_fastq:
-    input:
-        fastq1=lambda wildcards: (
-            f"{downloaded_fastqs_folder}/{wildcards.library}.{wildcards.run}.1.fastq.gz"
-            if needs_downloading(
-                LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run], 0
-            )
-            else LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run][0]
-        ),
-        fastq2=lambda wildcards: (
-            f"{downloaded_fastqs_folder}/{wildcards.library}.{wildcards.run}.2.fastq.gz"
-            if needs_downloading(
-                LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run], 1
-            )
-            else LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run][1]
-        ),
-    threads: 1
-    output:
-        directory(f"{processed_fastqs_folder}/{{library}}/{{run}}"),
-    shell:
-        """
-        mkdir -p {output}
-        cp {input.fastq1} {output}/1.00.fastq.gz
-        cp {input.fastq2} {output}/2.00.fastq.gz
-        """
+        chunk_command
 
 
 rule fastqc:
