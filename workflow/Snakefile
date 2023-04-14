@@ -1,7 +1,7 @@
 from pathlib import Path
 import yaml
 from urllib.parse import urlparse
-from common import organize_fastqs, needs_downloading
+from scripts.common import organize_fastqs, needs_downloading
 
 
 # configfile: "config/config.yml"
@@ -75,18 +75,6 @@ wildcard_constraints:
     chunk_id="[0-9]+",
 
 
-def get_start_end(query):
-    start, end = 0, None
-    if query:
-        for kv_pair in query.split("&"):
-            k, v = kv_pair.split("=")
-            if k == "start":
-                start = v
-            if k == "end":
-                end = v
-    return start, end
-
-
 # fasterq-dump just doesn't work for me on our server for some reason, but this code
 # should work as an alternative
 # Annoyingly, fasterq-dum doesn't have --gzip argument :(
@@ -137,43 +125,45 @@ def get_start_end(query):
 
 rule download_fastqs:
     # Convert rule to shell to allow conda env...
-    # conda:
-    #     "envs/download_fastqs.yml"
     output:
         fastq1=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.1.fastq.gz",
         fastq2=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.2.fastq.gz",
     log:
         "logs/download_fastqs/{library}.{run}.log",
     threads: 8
+    conda:
+        "envs/download_fastqs.yml"
     params:
         bgzip_threads = lambda wildcards, threads: max(1, (threads-2)/2)
-    run:
-        fastq_files = LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run]
-        if (len(fastq_files) == 1) and (fastq_files[0].startswith("sra:")):
-            parsed = urlparse(fastq_files[0])
-            srr, query = parsed.path, parsed.query
-            start, end = get_start_end(query)
-            if config['map']['use_custom_split']:
-                shell(f"""
-                    fastq-dump {srr} -Z --split-spot \
-                    {f'--minSpotId {start}' if start else ''} \
-                    {f'--maxSpotId {end}' if end else ''} \
-                        | python {workflow.basedir}/pyfilesplit --lines 4 \
-                            >(bgzip -c -@{params.bgzip_threads} > {output.fastq1}) \
-                            >(bgzip -c -@{params.bgzip_threads} > {output.fastq2}) \
-                    """)
-            else:
-                shell(
-                    f"""fastq-dump --origfmt --split-files --gzip \
-                        -O {downloaded_fastqs_folder} {srr} \
-                        {f'--minSpotId {start}' if start else ''} \
-                        {f'--maxSpotId {end}' if end else ''}
+    script:
+        "scripts/download_split_fastq.py"
+    # run:
+    #     fastq_files = LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run]
+    #     if (len(fastq_files) == 1) and (fastq_files[0].startswith("sra:")):
+    #         parsed = urlparse(fastq_files[0])
+    #         srr, query = parsed.path, parsed.query
+    #         start, end = get_start_end(query)
+    #         if config['map']['use_custom_split']:
+    #             shell(f"""
+    #                 fastq-dump {srr} -Z --split-spot \
+    #                 {f'--minSpotId {start}' if start else ''} \
+    #                 {f'--maxSpotId {end}' if end else ''} \
+    #                     | python {workflow.basedir}/pyfilesplit --lines 4 \
+    #                         >(bgzip -c -@{params.bgzip_threads} > {output.fastq1}) \
+    #                         >(bgzip -c -@{params.bgzip_threads} > {output.fastq2}) \
+    #                 """)
+    #         else:
+    #             shell(
+    #                 f"""fastq-dump --origfmt --split-files --gzip \
+    #                     -O {downloaded_fastqs_folder} {srr} \
+    #                     {f'--minSpotId {start}' if start else ''} \
+    #                     {f'--maxSpotId {end}' if end else ''}
 
-                        mv {downloaded_fastqs_folder}/{srr}_1.fastq.gz {output.fastq1}
-                        mv {downloaded_fastqs_folder}/{srr}_2.fastq.gz {output.fastq2}
+    #                     mv {downloaded_fastqs_folder}/{srr}_1.fastq.gz {output.fastq1}
+    #                     mv {downloaded_fastqs_folder}/{srr}_2.fastq.gz {output.fastq2}
 
-                    """
-                )
+    #                 """
+    #             )
 
 
 if config["map"]["chunksize"] > 0:
