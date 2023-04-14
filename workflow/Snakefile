@@ -329,6 +329,23 @@ rule bwaindex:
 #         "cut -f1,2 {input.genome_faidx} > {output.chromsizes}"
 
 
+rule trim:
+    input:
+        sample=[f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
+                f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz"]
+    log:
+        "logs/fastp/{library}.{run}.{chunk_id}.log",
+    params:
+        extra=config['map']['trim_options']
+    output:
+        # Would be better with a pipe, but it causes weird freezing of the pipeline
+        trimmed=[pipe(f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz"),
+                 pipe(f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz")],
+        json=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.fastp.json",
+        html=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.fastp.html",
+    wrapper:
+        "v1.25.0/bio/fastp"
+
 if config["parse"]["keep_unparsed_bams"]:
 
     # mapped_output = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
@@ -339,28 +356,11 @@ else:
     # mapped_output = pipe(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"),
     ruleorder: map_chunks_bwa_pipe > map_chunks_bwa
 
-
-rule trim:
-    input:
-        sample=[f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
-                f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz"]
-    log:
-        "logs/fastp/{library}.{run}.{chunk_id}.log",
-    params:
-        extra=config['map']['trim_options']
-    output:
-        trimmed=[pipe(f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.trimmed.fastq.gz"),
-                 pipe(f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.trimmed.fastq.gz")],
-        json=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.fastp.json",
-        html=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.fastp.html",
-    wrapper:
-        "v1.25.0/bio/fastp"
-
 rule map_chunks_bwa:
     input:
         reads=lambda wildcards: [
-            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.trimmed.fastq.gz",
-            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.trimmed.fastq.gz",
+            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
+            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
         ] if config['map']['trim_options'] else [
             f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
             f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
