@@ -383,8 +383,10 @@ rule merge_runs:
         "logs/merge_runs/{library}.{run}.tsv",
     benchmark:
         "benchmarks/merge_runs/{library}.{run}.tsv"
+    params:
+        command = lambda wildcards, input, threads, output: f"pairtools merge {input} --nproc {threads} -o {output}" if len(input)>1 else "cp {input} {output}"
     shell:
-        "pairtools merge {input} --nproc {threads} -o {output}"
+        '{params.command}'
 
 
 if config['parse']['make_pairsam']:
