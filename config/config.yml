@@ -116,7 +116,7 @@ parse:
     # Enable 'drop_readid' to drop readID from .pairs files to create
     # lightweight .pairs files
     # NOTE: does not affect alignment records in the .pairsam files and
-    # subsequently .bam files after .apirsam splitting.
+    # subsequently .bam files after .pairsam splitting.
     drop_readid: False
 
     # When 'keep_unparsed_bams' is True, distiller preserves the _immediate_
@@ -161,7 +161,7 @@ bin:
         - 1000
 
     # Specify if the multi-resolution .cool output files should be balanced.
-    balance: true
+    balance: True
 
     # Pass additional parameters to cooler balance:
     # balance_options: ''

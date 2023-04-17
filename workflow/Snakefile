@@ -124,7 +124,6 @@ wildcard_constraints:
 
 
 rule download_fastqs:
-    # Convert rule to shell to allow conda env...
     output:
         fastq1=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.1.fastq.gz",
         fastq2=f"{downloaded_fastqs_folder}/{{library}}.{{run}}.2.fastq.gz",
@@ -137,33 +136,6 @@ rule download_fastqs:
         bgzip_threads = lambda wildcards, threads: max(1, (threads-2)/2)
     script:
         "scripts/download_split_fastq.py"
-    # run:
-    #     fastq_files = LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run]
-    #     if (len(fastq_files) == 1) and (fastq_files[0].startswith("sra:")):
-    #         parsed = urlparse(fastq_files[0])
-    #         srr, query = parsed.path, parsed.query
-    #         start, end = get_start_end(query)
-    #         if config['map']['use_custom_split']:
-    #             shell(f"""
-    #                 fastq-dump {srr} -Z --split-spot \
-    #                 {f'--minSpotId {start}' if start else ''} \
-    #                 {f'--maxSpotId {end}' if end else ''} \
-    #                     | python {workflow.basedir}/pyfilesplit --lines 4 \
-    #                         >(bgzip -c -@{params.bgzip_threads} > {output.fastq1}) \
-    #                         >(bgzip -c -@{params.bgzip_threads} > {output.fastq2}) \
-    #                 """)
-    #         else:
-    #             shell(
-    #                 f"""fastq-dump --origfmt --split-files --gzip \
-    #                     -O {downloaded_fastqs_folder} {srr} \
-    #                     {f'--minSpotId {start}' if start else ''} \
-    #                     {f'--maxSpotId {end}' if end else ''}
-
-    #                     mv {downloaded_fastqs_folder}/{srr}_1.fastq.gz {output.fastq1}
-    #                     mv {downloaded_fastqs_folder}/{srr}_2.fastq.gz {output.fastq2}
-
-    #                 """
-    #             )
 
 
 if config["map"]["chunksize"] > 0:
@@ -361,7 +333,7 @@ rule parse_sort_chunks:
         chromsizes=chromsizes,
     threads: 4
     params:
-        dropsam_flag="--drop-sam" if config["parse"].get("drop_sam", False) else "",
+        dropsam_flag="" if config["parse"].get("make_pairsam", False) else "--drop-sam",
         dropreadid_flag="--drop-readid"
         if config["parse"].get("drop_readid", False)
         else "",
