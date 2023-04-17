@@ -455,7 +455,7 @@ rule merge_dedup:
     params:
         dedup_options=lambda wildcards: config["dedup"].get("dedup_options", ""),
         max_mismatch_bp=config["dedup"]["max_mismatch_bp"],
-        merge_command = lambda wildcards, input, threads: f"pairtools merge {input} --nproc {threads} | " if len(input)>1 else f"bgzip -dc {input} | "
+        merge_command = lambda wildcards, input, threads: f"pairtools merge {input} --nproc {threads} | " if len(input)>1 else f"bgzip -dc -@ {threads} {input} | "
     threads: 4
     conda:
         "envs/pairtools_cooler.yml"
@@ -475,42 +475,57 @@ if balance_args and balance_options:
     balance_args = f"{balance_args} {balance_options}"
 
 
-rule bin_zoom_pairs_library:
+rule bin_pairs_library:
     input:
         pairs=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.pairs.gz",
         chromsizes=chromsizes,
     params:
-        res_string=",".join([str(res) for res in config["bin"]["resolutions"]]),
         filter_command=lambda wildcards: f'| pairtools select "{config["bin"]["filters"][wildcards.filter_name]}"'
         if config["bin"]["filters"][wildcards.filter_name]
         else "",
-    threads: 8
+    threads: 4
     conda:
         "envs/pairtools_cooler.yml"
     output:
         cool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.cool",
-        mcool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
     log:
-        "logs/bin_zoom_pairs_library/{library}.{filter_name}.{min_resolution}.tsv",
+        "logs/bin_pairs_library/{library}.{filter_name}.{min_resolution}.tsv",
     benchmark:
-        "benchmarks/bin_zoom_pairs_library/{library}.{filter_name}.{min_resolution}.tsv"
+        "benchmarks/bin_pairs_library/{library}.{filter_name}.{min_resolution}.tsv"
     shell:
         f"""
-        zcat {{input.pairs}} {{params.filter_command}} | cooler cload pairs \
+        bgzip -dc -@ {{threads}} {{input.pairs}} {{params.filter_command}} | cooler cload pairs \
         -c1 2 -p1 3 -c2 4 -p2 5 \
         --assembly {assembly} \
         {{input.chromsizes}}:{{wildcards.min_resolution}} \
         - \
         {{output.cool}}
+        """
 
+
+rule zoom_pairs_library:
+    input:
+        cool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.cool",
+    params:
+        res_string=",".join([str(res) for res in config["bin"]["resolutions"]]),
+    threads: 8
+    conda:
+        "envs/pairtools_cooler.yml"
+    output:
+        mcool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
+    log:
+        "logs/zoom_library/{library}.{filter_name}.{min_resolution}.tsv",
+    benchmark:
+        "benchmarks/zoom_library/{library}.{filter_name}.{min_resolution}.tsv"
+    shell:
+        f"""
         cooler zoomify \
         --nproc {{threads}} \
         --out {{output.mcool}} \
         --resolutions {{params.res_string}} \
         {balance_args} \
-        {{output.cool}}
+        {{input.cool}}
         """
-
 
 rule merge_zoom_library_group_coolers:
     input:
