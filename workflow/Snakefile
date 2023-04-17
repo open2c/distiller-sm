@@ -390,8 +390,7 @@ rule merge_runs:
 
 
 if config['parse']['make_pairsam']:
-    merge_dedup_command = f"""pairtools merge {{input.pairs}} --nproc {{threads}} | \
-        pairtools dedup {{params.dedup_options}} \
+    dedup_command = f"""pairtools dedup {{params.dedup_options}} \
         --max-mismatch {config['dedup']['max_mismatch_bp']} \
         --mark-dups \
         --output \
@@ -426,8 +425,7 @@ if config['parse']['make_pairsam']:
             ".nodups.pairs.gz.px2",
         )
 else:
-    merge_dedup_command = """pairtools merge {input.pairs} --nproc {threads} | \
-        pairtools dedup {params.dedup_options} \
+    dedup_command = """pairtools dedup {params.dedup_options} \
         --max-mismatch {params.max_mismatch_bp} \
         --mark-dups \
         --output {output[0]} \
@@ -457,6 +455,7 @@ rule merge_dedup:
     params:
         dedup_options=lambda wildcards: config["dedup"].get("dedup_options", ""),
         max_mismatch_bp=config["dedup"]["max_mismatch_bp"],
+        merge_command = lambda wildcards, input, threads: f"pairtools merge {input} --nproc {threads} | " if len(input)>1 else f"bgzip -dc {input} | "
     threads: 4
     conda:
         "envs/pairtools_cooler.yml"
@@ -467,7 +466,7 @@ rule merge_dedup:
     benchmark:
         "benchmarks/merge_dedup/{library}.tsv"
     shell:
-        merge_dedup_command
+        '{params.merge_command}'+dedup_command
 
 
 balance_args = "--balance" if {config["bin"].get("balance", True)} else ""
