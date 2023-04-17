@@ -133,7 +133,7 @@ rule download_fastqs:
     conda:
         "envs/download_fastqs.yml"
     params:
-        bgzip_threads = lambda wildcards, threads: max(1, (threads-2)/2)
+        bgzip_threads=lambda wildcards, threads: max(1, (threads - 2) / 2),
     script:
         "scripts/download_split_fastq.py"
 
@@ -175,7 +175,10 @@ checkpoint chunk_fastq:
     params:
         chunksize=lambda wildcards: config["map"]["chunksize"] * 4,
     threads: lambda wildcards: 4 if config["map"]["chunksize"] > 0 else 1
-    conda: lambda wildcards: "envs/download_fastqs.yml" if config["map"]["chunksize"] > 0 else None
+    conda:
+        lambda wildcards: "envs/download_fastqs.yml" if config["map"][
+            "chunksize"
+        ] > 0 else None
     output:
         directory(f"{processed_fastqs_folder}/{{library}}/{{run}}"),
     benchmark:
@@ -206,8 +209,8 @@ rule fastqc:
     wrapper:
         "v1.25.0/bio/fastqc"
 
-if config["map"]["mapper"] == "bwa-mem":
 
+if config["map"]["mapper"] == "bwa-mem":
     idx = multiext(
         config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*"),
         ".amb",
@@ -218,7 +221,6 @@ if config["map"]["mapper"] == "bwa-mem":
     )
 
 else:
-
     idx = multiext(
         config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*"),
         ".0123",
@@ -268,20 +270,29 @@ rule bwaindex:
 
 rule trim:
     input:
-        sample=[f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
-                f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz"]
+        sample=[
+            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
+            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
+        ],
     log:
         "logs/fastp/{library}.{run}.{chunk_id}.log",
     params:
-        extra=config['map']['trim_options']
+        extra=config["map"]["trim_options"],
     output:
         # Would be better with a pipe, but it causes weird freezing of the pipeline
-        trimmed=[temp(f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz"),
-                 temp(f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz")],
+        trimmed=[
+            temp(
+                f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz"
+            ),
+            temp(
+                f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz"
+            ),
+        ],
         json=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.fastp.json",
         html=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.fastp.html",
     wrapper:
         "v1.25.0/bio/fastp"
+
 
 if config["parse"]["keep_unparsed_bams"]:
 
@@ -293,12 +304,15 @@ else:
     # mapped_output = pipe(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"),
     ruleorder: map_chunks_bwa_pipe > map_chunks_bwa
 
+
 rule map_chunks_bwa:
     input:
         reads=lambda wildcards: [
             f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
             f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
-        ] if config['map']['trim_options'] else [
+        ]
+        if config["map"]["trim_options"]
+        else [
             f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
             f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
         ],
@@ -384,12 +398,14 @@ rule merge_runs:
     benchmark:
         "benchmarks/merge_runs/{library}.{run}.tsv"
     params:
-        command = lambda wildcards, input, threads, output: f"pairtools merge {input} --nproc {threads} -o {output}" if len(input)>1 else "cp {input} {output}"
+        command=lambda wildcards, input, threads, output: f"pairtools merge {input} --nproc {threads} -o {output}"
+        if len(input) > 1
+        else "cp {input} {output}",
     shell:
-        '{params.command}'
+        "{params.command}"
 
 
-if config['parse']['make_pairsam']:
+if config["parse"]["make_pairsam"]:
     dedup_command = f"""pairtools dedup {{params.dedup_options}} \
         --max-mismatch {config['dedup']['max_mismatch_bp']} \
         --mark-dups \
@@ -414,16 +430,16 @@ if config['parse']['make_pairsam']:
     pairix {{output[0]}}
     """
     merge_output = multiext(
-            f"{pairs_library_folder}/{{library}}.{assembly}",
-            ".nodups.pairs.gz",
-            ".nodups.bam",
-            ".unmapped.pairs.gz",
-            ".unmapped.bam",
-            ".dups.pairs.gz",
-            ".dups.bam",
-            ".dedup.stats",
-            ".nodups.pairs.gz.px2",
-        )
+        f"{pairs_library_folder}/{{library}}.{assembly}",
+        ".nodups.pairs.gz",
+        ".nodups.bam",
+        ".unmapped.pairs.gz",
+        ".unmapped.bam",
+        ".dups.pairs.gz",
+        ".dups.bam",
+        ".dedup.stats",
+        ".nodups.pairs.gz.px2",
+    )
 else:
     dedup_command = """pairtools dedup {params.dedup_options} \
         --max-mismatch {params.max_mismatch_bp} \
@@ -437,13 +453,13 @@ else:
         pairix {output[0]}
     """
     merge_output = multiext(
-            f"{pairs_library_folder}/{{library}}.{assembly}",
-            ".nodups.pairs.gz",
-            ".unmapped.pairs.gz",
-            ".dups.pairs.gz",
-            ".dedup.stats",
-            ".nodups.pairs.gz.px2",
-        )
+        f"{pairs_library_folder}/{{library}}.{assembly}",
+        ".nodups.pairs.gz",
+        ".unmapped.pairs.gz",
+        ".dups.pairs.gz",
+        ".dedup.stats",
+        ".nodups.pairs.gz.px2",
+    )
 
 
 rule merge_dedup:
@@ -455,18 +471,20 @@ rule merge_dedup:
     params:
         dedup_options=lambda wildcards: config["dedup"].get("dedup_options", ""),
         max_mismatch_bp=config["dedup"]["max_mismatch_bp"],
-        merge_command = lambda wildcards, input, threads: f"pairtools merge {input} --nproc {threads} | " if len(input)>1 else f"bgzip -dc -@ {threads} {input} | "
+        merge_command=lambda wildcards, input, threads: f"pairtools merge {input} --nproc {threads} | "
+        if len(input) > 1
+        else f"bgzip -dc -@ {threads} {input} | ",
     threads: 4
     conda:
         "envs/pairtools_cooler.yml"
     output:
-        merge_output
+        merge_output,
     log:
         "logs/merge_dedup/{library}.tsv",
     benchmark:
         "benchmarks/merge_dedup/{library}.tsv"
     shell:
-        '{params.merge_command}'+dedup_command
+        "{params.merge_command}" + dedup_command
 
 
 balance_args = "--balance" if {config["bin"].get("balance", True)} else ""
@@ -526,6 +544,7 @@ rule zoom_pairs_library:
         {balance_args} \
         {{input.cool}}
         """
+
 
 rule merge_zoom_library_group_coolers:
     input:
