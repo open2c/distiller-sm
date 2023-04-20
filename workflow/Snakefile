@@ -220,7 +220,7 @@ if config["map"]["mapper"] == "bwa-mem":
         ".sa",
     )
 
-else:
+elif config["map"]["mapper"] == "bwa-mem2":
     idx = multiext(
         config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*"),
         ".0123",
@@ -228,6 +228,19 @@ else:
         ".ann",
         ".bwt.2bit.64",
         ".pac",
+    )
+else:
+    idx = multiext(
+        config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*"),
+        ".0123",
+        ".amb",
+        ".ann",
+        ".pac",
+        ".pos_packed",
+        ".suffixarray_uint64",
+        ".suffixarray_uint64_L0_PARAMETERS",
+        ".suffixarray_uint64_L1_PARAMETERS",
+        ".suffixarray_uint64_L2_PARAMETERS",
     )
 
 
@@ -238,6 +251,7 @@ rule bwaindex:
         idx=idx,
     params:
         bwa=config["map"]["mapper"],
+    threads: 8  #Only affects bwa-meme
     log:
         f"logs/bwa-memx_index/{assembly}.log",
     wrapper:
@@ -321,7 +335,7 @@ rule map_chunks_bwa:
     params:
         bwa=config["map"]["mapper"],
         extra="-SP",
-        sort="none",
+        sort="samtools",
         dedup="none",
     threads: 4
     output:
@@ -335,6 +349,8 @@ rule map_chunks_bwa:
 
 
 use rule map_chunks_bwa as map_chunks_bwa_pipe with:
+    params:
+        sort="none",
     output:
         pipe(
             f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"

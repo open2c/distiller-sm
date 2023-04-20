@@ -70,7 +70,7 @@ do_fastqc: False
 
 # Control how reads are mapped to the reference genomes.
 map:
-    mapper: 'bwa-mem2' #available: 'bwa-mem', 'bwa-mem2'
+    mapper: 'bwa-mem2' #available: 'bwa-mem', 'bwa-mem2', 'bwa-meme'
     # If 'chunksize' is non-zero, each input file gets split into multiple chunks,
     # each mapped separately. Useful for mapping on clusters with many
     # relatively weak nodes.
@@ -114,7 +114,8 @@ parse:
     drop_seq: True
 
     # Enable 'drop_readid' to drop readID from .pairs files to create
-    # lightweight .pairs files
+    # lightweight .pairs files. This would prevent one from detecting
+    # optical/clustering duplicates during dedup.
     # NOTE: does not affect alignment records in the .pairsam files and
     # subsequently .bam files after .pairsam splitting.
     drop_readid: False
