@@ -62,8 +62,7 @@ input:
 
     genome:
         assembly_name: 'sacCer3'
-        genome_fasta_path: 'test/genome/sacCer3.fa.gz'
-        bwa_index_wildcard_path: 'test/genome/sacCer3.fa.gz'
+        bwa_index_wildcard_path: 'test/genome/sacCer3.fa.gz*'
         chrom_sizes_path: 'test/genome/sacCer3.chrom.sizes'
 
 do_fastqc: False
