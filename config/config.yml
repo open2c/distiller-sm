@@ -178,12 +178,19 @@ bin:
 
 output:
     dirs:
-        downloaded_fastqs: 'test/fastq/downloaded_fastqs'
-        fastqc: 'test/results/fastqc/'
-        processed_fastqs: 'test/results/processed_fastqs'
-        mapped_parsed_sorted_chunks: 'test/results/mapped_parsed_sorted_chunks'
-        pairs_runs: 'test/results/pairs_runs'
-        pairs_library: 'test/results/pairs_library'
-        coolers_library: 'test/results/coolers_library'
-        coolers_library_group: 'test/results/coolers_library_group'
-        stats_library_group: 'test/results/stats_library_group'
+        downloaded_fastqs: 'inputs/fastq/downloaded_fastqs'
+        fastqc: 'results/fastqc'
+        processed_fastqs: 'results/processed_fastqs'
+        mapped_parsed_sorted_chunks: 'results/mapped_parsed_sorted_chunks'
+        pairs_runs: 'results/pairs_runs'
+        pairs_library: 'results/pairs_library'
+        coolers_library: 'results/coolers_library'
+        coolers_library_group: 'results/coolers_library_group'
+        stats_library_group: 'results/stats_library_group'
+
+# To use automatic upload to resgen, add your credentials to  ~/.resgen/credentials
+# (see https://docs-python.resgen.io/cli.html#logging-in)
+resgen:
+    upload: False
+    user: test
+    project: test
