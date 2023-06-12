@@ -1,7 +1,7 @@
 from pathlib import Path
 import yaml
 from urllib.parse import urlparse
-from scripts.common import organize_fastqs, needs_downloading
+from .scripts.common import organize_fastqs, needs_downloading
 
 
 # configfile: "config/config.yml"
