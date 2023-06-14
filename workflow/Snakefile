@@ -1,7 +1,9 @@
 from pathlib import Path
 import yaml
 from urllib.parse import urlparse
-from .scripts.common import organize_fastqs, needs_downloading
+
+
+include: "rules/common.smk"
 
 
 # configfile: "config/config.yml"
@@ -78,7 +80,9 @@ rule default:
 
 wildcard_constraints:
     library=f"({'|'.join([re.escape(lib) for lib in LIBRARY_RUN_FASTQS.keys()])})",
-    library_group=f"({'|'.join([re.escape(lib) for lib in config['input']['library_groups'].keys()])})",
+    library_group=f"({'|'.join([re.escape(lib) for lib in config['input']['library_groups'].keys()])})"
+    if "library_groups" in config["input"]
+    else "",
     run=f"({'|'.join([re.escape(run) for run in runs])})",
     chunk_id="[0-9]+",
 
