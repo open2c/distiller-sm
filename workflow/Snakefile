@@ -350,7 +350,7 @@ rule map_chunks_bwa:
         extra="-SP",
         sort="none",
         dedup="none",
-    threads: 20
+    threads: 8
     output:
         f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
     log:
