@@ -8,3 +8,4 @@ dependencies:
   - pip
   - pip:
     - resgen-python
+    - higlass-python<1.0
