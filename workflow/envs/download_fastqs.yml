@@ -1,5 +1,6 @@
 name: download_fastqs_env
 channels:
+  - conda-forge
   - bioconda
   - defaults
 dependencies:

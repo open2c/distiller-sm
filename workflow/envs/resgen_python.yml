@@ -1,8 +1,8 @@
 name: resgen_python
 channels:
+  - conda-forge
   - bioconda
   - defaults
-  - conda-forge
 dependencies:
   - python<=3.10
   - pip
