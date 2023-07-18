@@ -146,6 +146,9 @@ rule download_fastqs:
         "envs/download_fastqs.yml"
     params:
         bgzip_threads=lambda wildcards, threads: max(1, (threads - 2) / 2),
+        fastq_files=lambda wildcards: LIBRARY_RUN_FASTQS[wildcards.library][
+            wildcards.run
+        ],
     script:
         "scripts/download_split_fastq.py"
 

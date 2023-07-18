@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
 from urllib.parse import urlparse
-from common import organize_fastqs
+
+# from common import organize_fastqs
 from snakemake.shell import shell
 
 
@@ -17,9 +18,7 @@ def get_start_end(query):
     return start, end
 
 
-LIBRARY_RUN_FASTQS = organize_fastqs(snakemake.config)
-
-fastq_files = LIBRARY_RUN_FASTQS[snakemake.wildcards.library][snakemake.wildcards.run]
+fastq_files = snakemake.params.fastq_files
 if (len(fastq_files) == 1) and (fastq_files[0].startswith("sra:")):
     parsed = urlparse(fastq_files[0])
     srr, query = parsed.path, parsed.query
