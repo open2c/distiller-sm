@@ -118,7 +118,7 @@ wildcard_constraints:
 #         extra=lambda wildcards: fasterq_dump_extra[wildcards.accession],
 #     threads: 4
 #     wrapper:
-#         "v1.25.0/bio/sra-tools/fasterq-dump"
+#         "v2.2.1/bio/sra-tools/fasterq-dump"
 
 
 # rule rename_downloaded_fastq:
@@ -222,7 +222,7 @@ rule fastqc:
         "benchmarks/fastqc/{library}.{run}.{side}.tsv"
     threads: 1
     wrapper:
-        "v1.25.0/bio/fastqc"
+        "v2.2.1/bio/fastqc"
 
 
 if config["map"]["mapper"] == "bwa-mem":
@@ -271,7 +271,7 @@ rule bwaindex:
         f"logs/bwa-memx_index/{assembly}.log",
     cache: True
     wrapper:
-        "v1.25.0/bio/bwa-memx/index"
+        "v2.2.1/bio/bwa-memx/index"
 
 
 # faidx doesn't work with gzipped files :( So test fails, but probably should work
@@ -286,7 +286,7 @@ rule bwaindex:
 #     params:
 #         extra="",  # optional params string
 #     wrapper:
-#         "v1.25.0/bio/samtools/faidx"
+#         "v2.2.1/bio/samtools/faidx"
 
 
 # rule make_chromsizes:
@@ -321,7 +321,7 @@ rule trim:
         json=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.fastp.json",
         html=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.fastp.html",
     wrapper:
-        "v1.25.0/bio/fastp"
+        "v2.2.1/bio/fastp"
 
 
 if config["parse"]["keep_unparsed_bams"]:
@@ -361,7 +361,7 @@ rule map_chunks_bwa:
     benchmark:
         "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.tsv"
     wrapper:
-        "v1.25.0/bio/bwa-memx/mem"
+        "v2.2.1/bio/bwa-memx/mem"
 
 
 use rule map_chunks_bwa as map_chunks_bwa_pipe with:
