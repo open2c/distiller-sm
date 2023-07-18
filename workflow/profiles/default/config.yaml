@@ -1,0 +1,12 @@
+jobs: 40
+
+set-threads:
+    - chunk_fastq=4
+    - bwaindex=8
+    - map_chunks_bwa=8
+    - parse_sort_chunks=4
+    - merge_runs=4
+    - merge_dedup=4
+    - bin_pairs_library=4
+    - zoom_library=8
+    - merge_zoom_library_group_coolers=8

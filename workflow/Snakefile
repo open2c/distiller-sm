@@ -558,7 +558,7 @@ rule zoom_library:
         cool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.cool",
     params:
         res_string=",".join([str(res) for res in config["bin"]["resolutions"]]),
-        balance_args=lambda wildcards, threads: f"--balance-args '{config['bin']['balance_options']} --nproc {threads}'",
+        balance_args=lambda wildcards, threads: f"--balance-args '{config['bin'].get('balance_options', '')} --nproc {threads}'",
     threads: 8
     conda:
         "envs/pairtools_cooler.yml"
@@ -589,7 +589,7 @@ rule merge_zoom_library_group_coolers:
         ),
     params:
         res_string=",".join([str(res) for res in config["bin"]["resolutions"]]),
-        balance_args=lambda wildcards, threads: f"--balance-args '{config['bin']['balance_options']} --nproc {threads}'",
+        balance_args=lambda wildcards, threads: f"--balance-args '{config['bin'].get('balance_options', '')} --nproc {threads}'",
     threads: 8
     conda:
         "envs/pairtools_cooler.yml"
