@@ -36,8 +36,20 @@ runs = [item for sublist in runs for item in sublist]
 
 min_resolution = min(config["bin"]["resolutions"])
 
+library_coolers = expand(
+    f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
+    library=LIBRARY_RUN_FASTQS.keys(),
+    filter_name=list(config["bin"]["filters"].keys()),
+)
+
+library_scaling_pairs = expand(
+    f"{pairs_library_folder}/{{library}}.{assembly}.nodups.scaling.tsv",
+    library=LIBRARY_RUN_FASTQS.keys(),
+)
+
 library_group_coolers = []
 library_group_stats = []
+library_group_scaling_pairs = []
 if "library_groups" in config["input"] and len(config["input"]["library_groups"]) > 0:
     library_group_coolers = expand(
         f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
@@ -48,11 +60,12 @@ if "library_groups" in config["input"] and len(config["input"]["library_groups"]
         f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
         library_group=config["input"]["library_groups"].keys(),
     )
-library_coolers = expand(
-    f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
-    library=LIBRARY_RUN_FASTQS.keys(),
-    filter_name=list(config["bin"]["filters"].keys()),
-)
+    # library_group_scaling_pairs = expand(
+    #     f"{stats_library_group_folder}/{{library_group}}.{assembly}.scaling.tsv",
+    #     library_group=config["input"]["library_groups"].keys(),
+    # )
+
+
 fastqc = []
 if config["do_fastqc"]:
     for library in LIBRARY_RUN_FASTQS:
@@ -74,6 +87,8 @@ rule default:
         library_group_coolers,
         library_group_stats,
         library_coolers,
+        library_scaling_pairs,
+        # library_group_scaling_pairs,
         fastqc,
         resgen_uploads,
 
@@ -365,8 +380,6 @@ rule map_chunks_bwa:
 
 
 use rule map_chunks_bwa as map_chunks_bwa_pipe with:
-    params:
-        sort="none",
     output:
         pipe(
             f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"
@@ -617,6 +630,45 @@ rule merge_zoom_library_group_coolers:
         >{{log[0]}} 2>&1
         """
 
+rule scaling_pairs_library:
+    input:
+        pairs=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.pairs.gz",
+        chromsizes=chromsizes,
+    params:
+        min_distance=config["scaling_pairs"]["min_distance"],
+        max_distance=config["scaling_pairs"]["max_distance"],
+        n_dist_bins=config["scaling_pairs"]["n_dist_bins"],
+        extra=config["scaling_pairs"]["scaling_options"],
+    threads: 4
+    conda:
+        "envs/pairtools_cooler.yml"
+    output:
+        scaling=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.scaling.tsv",
+    log:
+        "logs/scaling_pairs_library/{library}.log",
+    benchmark:
+        "benchmarks/scaling_pairs_library/{library}.tsv"
+    shell:
+        """
+        pairtools scaling \
+        --dist-range {params.min_distance} {params.max_distance} \
+        --n-dist-bins {params.n_dist_bins} \
+        {params.extra} \
+        -o {output.scaling} \
+        {input.pairs} \
+        >{log[0]} 2>&1
+        """
+
+# use rule scaling_pairs_library as scaling_pairs_library_group with:
+#     input:
+#         pairs=f"{stats_library_group_folder}/{{library_group}}.{assembly}.pairs.gz",
+#         chromsizes=chromsizes,
+#     output:
+#         scaling=f"{stats_library_group_folder}/{{library_group}}.{assembly}.scaling.tsv",
+#     log:
+#         "logs/scaling_pairs_library_group/{library_group}.log",
+#     benchmark:
+#         "benchmarks/scaling_pairs_library_group/{library_group}.tsv"
 
 rule merge_stats_libraries_into_groups:
     input:
