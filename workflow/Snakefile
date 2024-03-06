@@ -3,6 +3,7 @@ import yaml
 from urllib.parse import urlparse
 import pandas as pd
 
+
 include: "rules/common.smk"
 
 
@@ -31,7 +32,6 @@ genome_path = config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*")
 chromsizes_path = config["input"]["genome"]["chrom_sizes_path"]
 
 
-
 LIBRARY_RUN_FASTQS = organize_fastqs(config)
 runs = [list(LIBRARY_RUN_FASTQS[lib].keys()) for lib in LIBRARY_RUN_FASTQS.keys()]
 runs = [item for sublist in runs for item in sublist]
@@ -50,14 +50,16 @@ if config.get("do_fastqc", False):
 
 # Setting up scaling from pairs outputs if required
 library_scaling_pairs = []
-if 'scaling_pairs' in config and config['scaling_pairs'].get('do', True):
+if "scaling_pairs" in config and config["scaling_pairs"].get("do", True):
     library_scaling_pairs = expand(
         f"{pairs_library_folder}/{{library}}.{assembly}.nodups.scaling.tsv",
         library=LIBRARY_RUN_FASTQS.keys(),
     )
-    if not config['scaling_pairs'].get('max_distance', False):
-        chromsizes = pd.read_table(chromsizes_path, header=None, names=["chrom", "size"])
-        config['scaling_pairs']['max_distance'] = chromsizes["size"].max()
+    if not config["scaling_pairs"].get("max_distance", False):
+        chromsizes = pd.read_table(
+            chromsizes_path, header=None, names=["chrom", "size"]
+        )
+        config["scaling_pairs"]["max_distance"] = chromsizes["size"].max()
 
 # Setting up the library cooler outputs
 library_coolers = expand(
@@ -92,6 +94,7 @@ resgen_uploads = (
     else []
 )
 
+
 # List of all required outputs of the workflow
 # Note that pairs are not listed, since they are needed to produce coolers, so they are
 # implicitly required
@@ -105,13 +108,16 @@ rule default:
         fastqc,
         resgen_uploads,
 
+
 # Global constraints on the wildcards to be used in the workflow - ensures correct
 # parsing of all file names into wildcards
 wildcard_constraints:
     library=f"({'|'.join([re.escape(lib) for lib in LIBRARY_RUN_FASTQS.keys()])})",
-    library_group=f"({'|'.join([re.escape(lib) for lib in config['input']['library_groups'].keys()])})"
-    if "library_groups" in config["input"]
-    else "",
+    library_group=(
+        f"({'|'.join([re.escape(lib) for lib in config['input']['library_groups'].keys()])})"
+        if "library_groups" in config["input"]
+        else ""
+    ),
     run=f"({'|'.join([re.escape(run) for run in runs])})",
     chunk_id="[0-9]+",
 
@@ -181,6 +187,7 @@ rule download_fastqs:
     script:
         "scripts/download_split_fastq.py"
 
+
 # Chunking command, depending on whether chunking is required - cimply copying the files
 # if no chunking needed, or splitting them into chunks of required size
 if config["map"]["chunksize"] > 0:
@@ -218,12 +225,12 @@ checkpoint chunk_fastq:
             else LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run][1]
         ),
     params:
-        chunksize=lambda wildcards: config["map"]["chunksize"] * 4, #*4 because we split by lines, not by reads
+        chunksize=lambda wildcards: config["map"]["chunksize"] * 4,  #*4 because we split by lines, not by reads
     threads: lambda wildcards: 4 if config["map"]["chunksize"] > 0 else 1
     conda:
-        lambda wildcards: "envs/download_fastqs.yml" if config["map"][
-            "chunksize"
-        ] > 0 else None
+        lambda wildcards: (
+            "envs/download_fastqs.yml" if config["map"]["chunksize"] > 0 else None
+        )
     output:
         directory(f"{processed_fastqs_folder}/{{library}}/{{run}}"),
     benchmark:
@@ -254,6 +261,7 @@ rule fastqc:
     wrapper:
         "v2.2.1/bio/fastqc"
 
+
 # Depending on the mapper, the index files will be different
 if config["map"]["mapper"] == "bwa-mem":
     idx = multiext(
@@ -275,7 +283,7 @@ elif config["map"]["mapper"] == "bwa-mem2":
         ".pac",
     )
 
-else: # bwa-meme
+else:  # bwa-meme
     idx = multiext(
         genome_path,
         ".0123",
@@ -354,26 +362,31 @@ rule trim:
     wrapper:
         "v2.2.1/bio/fastp"
 
+
 # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
 # Perhaps something with tee might be faster, had trouble getting it to work
 if config["parse"]["keep_unparsed_bams"]:
+
     ruleorder: map_chunks_bwa > map_chunks_bwa_pipe
 
 else:
+
     ruleorder: map_chunks_bwa_pipe > map_chunks_bwa
 
 
 rule map_chunks_bwa:
     input:
-        reads=lambda wildcards: [
-            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
-            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
-        ]
-        if config["map"]["trim_options"]
-        else [
-            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
-            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
-        ],
+        reads=lambda wildcards: (
+            [
+                f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
+                f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
+            ]
+            if config["map"]["trim_options"]
+            else [
+                f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
+                f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
+            ]
+        ),
         reference=genome_path,
         idx=idx,
     params:
@@ -406,9 +419,9 @@ rule parse_sort_chunks:
     threads: 4
     params:
         dropsam_flag="" if config["parse"].get("make_pairsam", False) else "--drop-sam",
-        dropreadid_flag="--drop-readid"
-        if config["parse"].get("drop_readid", False)
-        else "",
+        dropreadid_flag=(
+            "--drop-readid" if config["parse"].get("drop_readid", False) else ""
+        ),
         dropseq_flag="--drop-seq" if config["parse"].get("drop_seq", True) else "",
         parsing_options=config["parse"].get("parsing_options", ""),
         # keep_bams_command=f"| tee >(samtools view -bS > {mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam)"
@@ -430,6 +443,7 @@ rule parse_sort_chunks:
         | pairtools sort --nproc {threads} -o {output} \
         >{log[0]} 2>&1
         """
+
 
 # Find out the chunk ids for each library and run - since we don't know them beforehand
 def get_pair_chunks(wildcards):
@@ -457,9 +471,11 @@ rule merge_runs:
     benchmark:
         "benchmarks/merge_runs/{library}.{run}.tsv"
     params:
-        command=lambda wildcards, input, threads, output: f"pairtools merge {input} --nproc {threads} -o {output}"
-        if len(input) > 1
-        else f"cp {input} {output}",
+        command=lambda wildcards, input, threads, output: (
+            f"pairtools merge {input} --nproc {threads} -o {output}"
+            if len(input) > 1
+            else f"cp {input} {output}"
+        ),
     shell:
         """{params.command} \
         >{log[0]} 2>&1
@@ -532,9 +548,11 @@ rule merge_dedup:
     params:
         dedup_options=lambda wildcards: config["dedup"].get("dedup_options", ""),
         max_mismatch_bp=config["dedup"]["max_mismatch_bp"],
-        merge_command=lambda wildcards, input, threads: f"pairtools merge {input} --nproc {threads} | "
-        if len(input) > 1
-        else f"bgzip -dc -@ {threads-1} {input} | ",
+        merge_command=lambda wildcards, input, threads: (
+            f"pairtools merge {input} --nproc {threads} | "
+            if len(input) > 1
+            else f"bgzip -dc -@ {threads-1} {input} | "
+        ),
     threads: 4
     conda:
         "envs/pairtools_cooler.yml"
@@ -559,9 +577,11 @@ rule bin_pairs_library:
         pairs=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.pairs.gz",
         chromsizes=chromsizes_path,
     params:
-        filter_command=lambda wildcards: f'| pairtools select "{config["bin"]["filters"][wildcards.filter_name]}"'
-        if config["bin"]["filters"][wildcards.filter_name]
-        else "",
+        filter_command=lambda wildcards: (
+            f'| pairtools select "{config["bin"]["filters"][wildcards.filter_name]}"'
+            if config["bin"]["filters"][wildcards.filter_name]
+            else ""
+        ),
     threads: 4
     conda:
         "envs/pairtools_cooler.yml"
@@ -643,6 +663,7 @@ rule merge_zoom_library_group_coolers:
         >{{log[0]}} 2>&1
         """
 
+
 rule scaling_pairs_library:
     input:
         pairs=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.pairs.gz",
@@ -672,6 +693,7 @@ rule scaling_pairs_library:
         >{log[0]} 2>&1
         """
 
+
 # use rule scaling_pairs_library as scaling_pairs_library_group with:
 #     input:
 #         pairs=f"{stats_library_group_folder}/{{library_group}}.{assembly}.pairs.gz",
@@ -682,6 +704,7 @@ rule scaling_pairs_library:
 #         "logs/scaling_pairs_library_group/{library_group}.log",
 #     benchmark:
 #         "benchmarks/scaling_pairs_library_group/{library_group}.tsv"
+
 
 rule merge_stats_libraries_into_groups:
     input:
