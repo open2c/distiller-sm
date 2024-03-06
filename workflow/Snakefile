@@ -188,7 +188,7 @@ rule download_fastqs:
         "scripts/download_split_fastq.py"
 
 
-# Chunking command, depending on whether chunking is required - cimply copying the files
+# Chunking command, depending on whether chunking is required - simply copying the files
 # if no chunking needed, or splitting them into chunks of required size
 if config["map"]["chunksize"] > 0:
     chunk_command = """
