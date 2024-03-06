@@ -140,6 +140,20 @@ dedup:
     # duplicates.
     max_mismatch_bp: 1
 
+# Scaling, or P(s), calculated using pairtools on the output of deduplication.
+# Output stored next to the deduplicated pairs.
+scaling_pairs:
+    do_scaling: True
+    # Shortest distance to consider when calculating P(s).
+    min_distance: 10
+    # Longest distance to consider when calculating P(s).
+    # If False, use the longest chromosome
+    max_distance: False
+    # How many bins to use when calculating P(s).
+    n_dist_bins: 256
+    # Any additional options to pass to pairtools scaling.
+    scaling_options: ''
+
 # Control how Hi-C pairs are binned into contact maps, stored in .cool files.
 bin:
     # Specify which resolutions should be included in the multi-resolution .cool file.
