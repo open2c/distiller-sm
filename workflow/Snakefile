@@ -1,7 +1,7 @@
 from pathlib import Path
 import yaml
 from urllib.parse import urlparse
-
+import pandas as pd
 
 include: "rules/common.smk"
 
@@ -28,7 +28,9 @@ stats_library_group_folder = config["output"]["dirs"]["stats_library_group"]
 assembly = config["input"]["genome"]["assembly_name"]
 genome_path = config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*")
 # custom_genome_folder = Path(config["genome"]["custom_genome_path"]).parent
-chromsizes = config["input"]["genome"]["chrom_sizes_path"]
+chromsizes_path = config["input"]["genome"]["chrom_sizes_path"]
+
+
 
 LIBRARY_RUN_FASTQS = organize_fastqs(config)
 runs = [list(LIBRARY_RUN_FASTQS[lib].keys()) for lib in LIBRARY_RUN_FASTQS.keys()]
@@ -36,20 +38,38 @@ runs = [item for sublist in runs for item in sublist]
 
 min_resolution = min(config["bin"]["resolutions"])
 
+# Setting up FASTQC outputs if required
+fastqc = []
+if config.get("do_fastqc", False):
+    for library in LIBRARY_RUN_FASTQS:
+        fastqc += expand(
+            f"{fastqc_folder}/{library}.{{run}}.{{side}}_fastqc.html",
+            run=LIBRARY_RUN_FASTQS[library].keys(),
+            side=[1, 2],
+        )
+
+# Setting up scaling from pairs outputs if required
+library_scaling_pairs = []
+if 'scaling_pairs' in config and config['scaling_pairs'].get('do', True):
+    library_scaling_pairs = expand(
+        f"{pairs_library_folder}/{{library}}.{assembly}.nodups.scaling.tsv",
+        library=LIBRARY_RUN_FASTQS.keys(),
+    )
+    if not config['scaling_pairs'].get('max_distance', False):
+        chromsizes = pd.read_table(chromsizes_path, header=None, names=["chrom", "size"])
+        config['scaling_pairs']['max_distance'] = chromsizes["size"].max()
+
+# Setting up the library cooler outputs
 library_coolers = expand(
     f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
     library=LIBRARY_RUN_FASTQS.keys(),
     filter_name=list(config["bin"]["filters"].keys()),
 )
 
-library_scaling_pairs = expand(
-    f"{pairs_library_folder}/{{library}}.{assembly}.nodups.scaling.tsv",
-    library=LIBRARY_RUN_FASTQS.keys(),
-)
-
+# Setting up the library group cooler and group stats outputs
 library_group_coolers = []
 library_group_stats = []
-library_group_scaling_pairs = []
+# library_group_scaling_pairs = []
 if "library_groups" in config["input"] and len(config["input"]["library_groups"]) > 0:
     library_group_coolers = expand(
         f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
@@ -65,23 +85,16 @@ if "library_groups" in config["input"] and len(config["input"]["library_groups"]
     #     library_group=config["input"]["library_groups"].keys(),
     # )
 
-
-fastqc = []
-if config["do_fastqc"]:
-    for library in LIBRARY_RUN_FASTQS:
-        fastqc += expand(
-            f"{fastqc_folder}/{library}.{{run}}.{{side}}_fastqc.html",
-            run=LIBRARY_RUN_FASTQS[library].keys(),
-            side=[1, 2],
-        )
-
+# Setting up resgen upload outputs (empty files indicating that the upload has been done)
 resgen_uploads = (
     [f"{clr}_uploaded" for clr in library_coolers + library_group_coolers]
     if config["resgen"]["upload"]
     else []
 )
 
-
+# List of all required outputs of the workflow
+# Note that pairs are not listed, since they are needed to produce coolers, so they are
+# implicitly required
 rule default:
     input:
         library_group_coolers,
@@ -92,7 +105,8 @@ rule default:
         fastqc,
         resgen_uploads,
 
-
+# Global constraints on the wildcards to be used in the workflow - ensures correct
+# parsing of all file names into wildcards
 wildcard_constraints:
     library=f"({'|'.join([re.escape(lib) for lib in LIBRARY_RUN_FASTQS.keys()])})",
     library_group=f"({'|'.join([re.escape(lib) for lib in config['input']['library_groups'].keys()])})"
@@ -167,7 +181,8 @@ rule download_fastqs:
     script:
         "scripts/download_split_fastq.py"
 
-
+# Chunking command, depending on whether chunking is required - cimply copying the files
+# if no chunking needed, or splitting them into chunks of required size
 if config["map"]["chunksize"] > 0:
     chunk_command = """
         mkdir -p {output};
@@ -203,7 +218,7 @@ checkpoint chunk_fastq:
             else LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run][1]
         ),
     params:
-        chunksize=lambda wildcards: config["map"]["chunksize"] * 4,
+        chunksize=lambda wildcards: config["map"]["chunksize"] * 4, #*4 because we split by lines, not by reads
     threads: lambda wildcards: 4 if config["map"]["chunksize"] > 0 else 1
     conda:
         lambda wildcards: "envs/download_fastqs.yml" if config["map"][
@@ -239,7 +254,7 @@ rule fastqc:
     wrapper:
         "v2.2.1/bio/fastqc"
 
-
+# Depending on the mapper, the index files will be different
 if config["map"]["mapper"] == "bwa-mem":
     idx = multiext(
         genome_path,
@@ -259,7 +274,8 @@ elif config["map"]["mapper"] == "bwa-mem2":
         ".bwt.2bit.64",
         ".pac",
     )
-else:
+
+else: # bwa-meme
     idx = multiext(
         genome_path,
         ".0123",
@@ -281,7 +297,7 @@ rule bwaindex:
         idx=idx,
     params:
         bwa=config["map"]["mapper"],
-    threads: 8  #Only affects bwa-meme
+    threads: 1  #Only affects bwa-meme
     log:
         f"logs/bwa-memx_index/{assembly}.log",
     cache: True
@@ -308,7 +324,7 @@ rule bwaindex:
 #     input:
 #         genome_faidx=f"{config['input']['genome']['genome_fasta_path']}.fai",
 #     output:
-#         chromsizes=chromsizes,
+#         chromsizes=chromsizes_path,
 #     shell:
 #         "cut -f1,2 {input.genome_faidx} > {output.chromsizes}"
 
@@ -338,15 +354,12 @@ rule trim:
     wrapper:
         "v2.2.1/bio/fastp"
 
-
+# If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
+# Perhaps something with tee might be faster, had trouble getting it to work
 if config["parse"]["keep_unparsed_bams"]:
-
-    # mapped_output = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
     ruleorder: map_chunks_bwa > map_chunks_bwa_pipe
 
 else:
-
-    # mapped_output = pipe(f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"),
     ruleorder: map_chunks_bwa_pipe > map_chunks_bwa
 
 
@@ -389,7 +402,7 @@ use rule map_chunks_bwa as map_chunks_bwa_pipe with:
 rule parse_sort_chunks:
     input:
         bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
-        chromsizes=chromsizes,
+        chromsizes=chromsizes_path,
     threads: 4
     params:
         dropsam_flag="" if config["parse"].get("make_pairsam", False) else "--drop-sam",
@@ -418,7 +431,7 @@ rule parse_sort_chunks:
         >{log[0]} 2>&1
         """
 
-
+# Find out the chunk ids for each library and run - since we don't know them beforehand
 def get_pair_chunks(wildcards):
     checkpoint_output = checkpoints.chunk_fastq.get(**wildcards).output
     chunk_ids = glob_wildcards(
@@ -544,7 +557,7 @@ rule merge_dedup:
 rule bin_pairs_library:
     input:
         pairs=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.pairs.gz",
-        chromsizes=chromsizes,
+        chromsizes=chromsizes_path,
     params:
         filter_command=lambda wildcards: f'| pairtools select "{config["bin"]["filters"][wildcards.filter_name]}"'
         if config["bin"]["filters"][wildcards.filter_name]
@@ -633,7 +646,7 @@ rule merge_zoom_library_group_coolers:
 rule scaling_pairs_library:
     input:
         pairs=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.pairs.gz",
-        chromsizes=chromsizes,
+        chromsizes=chromsizes_path,
     params:
         min_distance=config["scaling_pairs"]["min_distance"],
         max_distance=config["scaling_pairs"]["max_distance"],
@@ -662,7 +675,7 @@ rule scaling_pairs_library:
 # use rule scaling_pairs_library as scaling_pairs_library_group with:
 #     input:
 #         pairs=f"{stats_library_group_folder}/{{library_group}}.{assembly}.pairs.gz",
-#         chromsizes=chromsizes,
+#         chromsizes=chromsizes_path,
 #     output:
 #         scaling=f"{stats_library_group_folder}/{{library_group}}.{assembly}.scaling.tsv",
 #     log:
@@ -702,7 +715,7 @@ rule resgen_upload_library_group:
             f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool_uploaded"
         ),
     shell:
-        """resgen sync datasets {params.user} {params.project} {input.mcool} \
+        """resgen sync datasets '{params.user}' '{params.project}' {input.mcool} \
         --tag filetype:cooler --tag assembly:{params.assembly} --tag datatype:matrix \
         >{log[0]} 2>&1
         """
