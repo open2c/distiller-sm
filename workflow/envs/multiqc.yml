@@ -1,0 +1,9 @@
+name: multiqc_env
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python>=3.10
+  - pip:
+    - https://github.com/open2c/MultiQC/archive/refs/heads/pairtools-module.zip

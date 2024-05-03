@@ -138,7 +138,8 @@ dedup:
     # on both sides. 'max_mismatch_bp' controls the maximal allowed mismatch in
     # mapped locations on either side for two pairs to be still considered as
     # duplicates.
-    max_mismatch_bp: 1
+    max_mismatch_bp: 0
+    save_by_tile_dups: True
 
 # Scaling, or P(s), calculated using pairtools on the output of deduplication.
 # Output stored next to the deduplicated pairs.

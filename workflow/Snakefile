@@ -26,6 +26,8 @@ coolers_library_folder = config["output"]["dirs"]["coolers_library"]
 coolers_library_group_folder = config["output"]["dirs"]["coolers_library_group"]
 stats_library_group_folder = config["output"]["dirs"]["stats_library_group"]
 
+multiqc_folder = config["output"]["dirs"]["multiqc"]
+
 assembly = config["input"]["genome"]["assembly_name"]
 genome_path = config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*")
 # custom_genome_folder = Path(config["genome"]["custom_genome_path"]).parent
@@ -43,7 +45,7 @@ fastqc = []
 if config.get("do_fastqc", False):
     for library in LIBRARY_RUN_FASTQS:
         fastqc += expand(
-            f"{fastqc_folder}/{library}.{{run}}.{{side}}_fastqc.html",
+            f"{fastqc_folder}/{library}.{{run}}.{{side}}_fastqc.zip",
             run=LIBRARY_RUN_FASTQS[library].keys(),
             side=[1, 2],
         )
@@ -87,6 +89,8 @@ if "library_groups" in config["input"] and len(config["input"]["library_groups"]
     #     library_group=config["input"]["library_groups"].keys(),
     # )
 
+multiqc = [f"{multiqc_folder}/multiqc_report.html"]
+
 # Setting up resgen upload outputs (empty files indicating that the upload has been done)
 resgen_uploads = (
     [f"{clr}_uploaded" for clr in library_coolers + library_group_coolers]
@@ -106,6 +110,7 @@ rule default:
         library_scaling_pairs,
         # library_group_scaling_pairs,
         fastqc,
+        multiqc,
         resgen_uploads,
 
 
@@ -233,6 +238,8 @@ checkpoint chunk_fastq:
         )
     output:
         directory(f"{processed_fastqs_folder}/{{library}}/{{run}}"),
+    log:
+        "logs/chunk_runs/{library}.{run}.tsv"
     benchmark:
         "benchmarks/chunk_runs/{library}.{run}.tsv"
     shell:
@@ -252,15 +259,15 @@ rule fastqc:
             ]
         ),
     output:
-        fastqc=f"{fastqc_folder}/{{library}}.{{run}}.{{side}}_fastqc.html",
+        html=f"{fastqc_folder}/{{library}}.{{run}}.{{side}}_fastqc.html",
+        zip=f"{fastqc_folder}/{{library}}.{{run}}.{{side}}_fastqc.zip",
     log:
         "logs/fastqc/{library}.{run}.{side}.log",
     benchmark:
         "benchmarks/fastqc/{library}.{run}.{side}.tsv"
     threads: 1
     wrapper:
-        "v2.2.1/bio/fastqc"
-
+        "v3.10.1/bio/fastqc"
 
 # Depending on the mapper, the index files will be different
 if config["map"]["mapper"] == "bwa-mem":
@@ -481,8 +488,8 @@ rule merge_runs:
         >{log[0]} 2>&1
         """
 
-
 if config["parse"]["make_pairsam"]:
+    bytile_arg = "--keep-parent-id --output-bytile-stats {output[7]}" if config['dedup'].get('save_by_tile_dups', False) else ""
     dedup_command = """pairtools dedup {params.dedup_options} \
         --max-mismatch {params.max_mismatch_bp} \
         --mark-dups \
@@ -502,10 +509,7 @@ if config["parse"]["make_pairsam"]:
                 --output-sam {output[5]} \
              ) \
         --output-stats {output[6]} \
-        --yaml \
-        -
-    pairix {output[0]}
-    """
+        """ + bytile_arg + " && pairix {output[0]}"
     merge_output = multiext(
         f"{pairs_library_folder}/{{library}}.{assembly}",
         ".nodups.pairs.gz",
@@ -518,6 +522,7 @@ if config["parse"]["make_pairsam"]:
         ".nodups.pairs.gz.px2",
     )
 else:
+    bytile_arg = "--keep-parent-id --output-bytile-stats {output[5]}" if config['dedup'].get('save_by_tile_dups', False) else ""
     dedup_command = """pairtools dedup {params.dedup_options} \
         --max-mismatch {params.max_mismatch_bp} \
         --mark-dups \
@@ -525,10 +530,7 @@ else:
         --output-unmapped {output[1]} \
         --output-dups {output[2]} \
         --output-stats {output[3]} \
-        --yaml
-        
-        pairix {output[0]}
-    """
+        """ + bytile_arg + " && pairix {output[0]}"
     merge_output = multiext(
         f"{pairs_library_folder}/{{library}}.{assembly}",
         ".nodups.pairs.gz",
@@ -537,6 +539,8 @@ else:
         ".dedup.stats",
         ".nodups.pairs.gz.px2",
     )
+if config['dedup'].get('save_by_tile_dups', False):
+    merge_output += [f"{pairs_library_folder}/{{library}}.{assembly}.by_tile_dups.txt"]
 
 
 rule merge_dedup:
@@ -671,7 +675,7 @@ rule scaling_pairs_library:
     params:
         min_distance=config["scaling_pairs"]["min_distance"],
         max_distance=config["scaling_pairs"]["max_distance"],
-        n_dist_bins=config["scaling_pairs"]["n_dist_bins"],
+        n_dist_bins_decade=config["scaling_pairs"]["n_dist_bins_decade"],
         extra=config["scaling_pairs"]["scaling_options"],
     threads: 4
     conda:
@@ -686,7 +690,7 @@ rule scaling_pairs_library:
         """
         pairtools scaling \
         --dist-range {params.min_distance} {params.max_distance} \
-        --n-dist-bins {params.n_dist_bins} \
+        --n-dist-bins-decade {params.n_dist_bins_decade} \
         {params.extra} \
         -o {output.scaling} \
         {input.pairs} \
@@ -719,8 +723,34 @@ rule merge_stats_libraries_into_groups:
     output:
         f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
     shell:
-        "pairtools stats --merge --yaml {input} -o {output} >{log[0]} 2>&1"
+        "pairtools stats --merge {input} -o {output} >{log[0]} 2>&1"
 
+
+rule multiqc:
+    input:
+        fastqc,
+        expand(
+            f"{pairs_library_folder}/{{library}}.{assembly}.dedup.stats",
+            library=config["input"]["raw_reads_paths"].keys(),
+        ),
+        expand(
+            f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
+            library_group=config["input"]["library_groups"].keys(),
+        ) if "library_groups" in config["input"] else [],
+    conda:
+        "envs/multiqc.yml"
+    log:
+        "logs/multiqc.log",
+    params:
+        input_dirs = lambda wildcards, input: list(set([Path(f).parent for f in input])),
+        outdir = lambda wildcards, output: Path(output[0]).parent,
+    output:
+        report=f"{multiqc_folder}/multiqc_report.html",
+        dir=directory(multiqc_folder),
+    shell:
+        """multiqc -f --outdir {output.dir} -m pairtools -m fastqc \
+        {params.input_dirs} \
+        >{log} 2>&1"""
 
 rule resgen_upload_library_group:
     input:
