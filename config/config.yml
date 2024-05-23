@@ -151,7 +151,7 @@ scaling_pairs:
     # If False, use the longest chromosome
     max_distance: False
     # How many bins to use when calculating P(s).
-    n_dist_bins: 256
+    n_dist_bins_decade: 10
     # Any additional options to pass to pairtools scaling.
     scaling_options: ''
 
@@ -189,6 +189,9 @@ bin:
     filters:
         no_filter: ''
         mapq_30: '(mapq1>=30) and (mapq2>=30)'
+    
+    # Convert .mcool files to .hic files (uses hictk)
+    make_hic: True
 
 output:
     dirs:
@@ -201,6 +204,7 @@ output:
         coolers_library: 'results/coolers_library'
         coolers_library_group: 'results/coolers_library_group'
         stats_library_group: 'results/stats_library_group'
+        multiqc: 'results/multiqc'
 
 # To use automatic upload to resgen, add your credentials to  ~/.resgen/credentials
 # (see https://docs-python.resgen.io/cli.html#logging-in)

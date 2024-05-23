@@ -69,6 +69,12 @@ library_coolers = expand(
     library=LIBRARY_RUN_FASTQS.keys(),
     filter_name=list(config["bin"]["filters"].keys()),
 )
+if config['bin'].get('make_hic', False):
+    library_coolers += expand(
+        f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{min_resolution}.hic",
+        library=LIBRARY_RUN_FASTQS.keys(),
+        filter_name=list(config["bin"]["filters"].keys()),
+    )
 
 # Setting up the library group cooler and group stats outputs
 library_group_coolers = []
@@ -80,6 +86,12 @@ if "library_groups" in config["input"] and len(config["input"]["library_groups"]
         library_group=config["input"]["library_groups"].keys(),
         filter_name=list(config["bin"]["filters"].keys()),
     )
+    if config['bin'].get('make_hic', False):
+        library_group_coolers += expand(
+            f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{min_resolution}.hic",
+            library_group=config["input"]["library_groups"].keys(),
+            filter_name=list(config["bin"]["filters"].keys()),
+        )
     library_group_stats = expand(
         f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
         library_group=config["input"]["library_groups"].keys(),
@@ -667,6 +679,35 @@ rule merge_zoom_library_group_coolers:
         >{{log[0]}} 2>&1
         """
 
+rule mcool2hic_group:
+    input:
+        mcool=f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
+    output:
+        hic=f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.hic",
+    log:
+        "logs/mcool2hic/{library_group}.{filter_name}.{min_resolution}.log",
+    benchmark:
+        "benchmarks/mcool2hic/{library_group}.{filter_name}.{min_resolution}.tsv"
+    conda:
+        "envs/hictk.yml"
+    threads: 8
+    params:
+        tmpdir=coolers_library_group_folder
+    shell:
+        """
+        hictk convert --threads {threads} --tmpdir {params.tmpdir} \
+        {input.mcool} {output.hic} >{log} 2>&1
+        """
+
+use rule mcool2hic_group as mcool2hic_library with:
+    input:
+        mcool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
+    output:
+        hic=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.hic",
+    log:
+        "logs/mcool2hic/{library}.{filter_name}.{min_resolution}.log",
+    benchmark:
+        "benchmarks/mcool2hic/{library}.{filter_name}.{min_resolution}.tsv"
 
 rule scaling_pairs_library:
     input:
