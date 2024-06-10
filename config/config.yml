@@ -69,7 +69,14 @@ do_fastqc: False
 
 # Control how reads are mapped to the reference genomes.
 map:
-    mapper: 'bwa-mem' #available: 'bwa-mem', 'bwa-mem2', 'bwa-meme'
+    mapper: 'bwa-mem2' #available: 'bwa-mem', 'bwa-mem2', 'bwa-meme', 'chromap'
+    # If using 'chromap', all parsing parameters are ignored, since chromap
+    # outputs .pairs files directly.
+    # In addition, chromap saves a minimal .pairs file with only the strictly requires
+    # columns. It can not save mapq values, hence you have to remove the filter
+    # that uses it - but you can set a custom minimum mapq value for the mapping
+    # itself with -q extra argument to chromap.
+    #
     # If 'chunksize' is non-zero, each input file gets split into multiple chunks,
     # each mapped separately. Useful for mapping on clusters with many
     # relatively weak nodes.
@@ -78,7 +85,7 @@ map:
     # however, having >~10 chunks per run slow down merging.
     chunksize: 30_000
 
-    # Specify extra BWA mapping options.
+    # Specify extra BWA/chromap mapping options.
     mapping_options: ''
 
     # Specify fastp trim options.
@@ -185,6 +192,7 @@ bin:
     # {filter_name}: '{a valid Python expression}'
     filters:
         no_filter: ''
+        # comment out the following when using chromap:
         mapq_30: '(mapq1>=30) and (mapq2>=30)'
     
     # Convert .mcool files to .hic files (uses hictk)
