@@ -141,7 +141,7 @@ wildcard_constraints:
 
 # fasterq-dump just doesn't work for me on our server for some reason, but this code
 # should work as an alternative
-# Annoyingly, fasterq-dum doesn't have --gzip argument :(
+# Annoyingly, fasterq-dump doesn't have --gzip argument :(
 
 # fasterq_dump_extra = {}
 # fastq_accession_dict = {}
@@ -459,15 +459,15 @@ rule parse_sort_chunks:
         chromsizes=chromsizes_path,
     threads: 4
     params:
+        # keep_bams_command=f"| tee >(samtools view -bS > {mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam)"
+        # if config["parse"]["keep_unparsed_bams"]
+        # else "",
         dropsam_flag="" if config["parse"].get("make_pairsam", False) else "--drop-sam",
         dropreadid_flag=(
             "--drop-readid" if config["parse"].get("drop_readid", False) else ""
         ),
         dropseq_flag="--drop-seq" if config["parse"].get("drop_seq", True) else "",
         parsing_options=config["parse"].get("parsing_options", ""),
-        # keep_bams_command=f"| tee >(samtools view -bS > {mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam)"
-        # if config["parse"]["keep_unparsed_bams"]
-        # else "",
     conda:
         "envs/pairtools_cooler.yml"
     output:
