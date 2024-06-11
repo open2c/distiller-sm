@@ -69,7 +69,7 @@ library_coolers = expand(
     library=LIBRARY_RUN_FASTQS.keys(),
     filter_name=list(config["bin"]["filters"].keys()),
 )
-if config['bin'].get('make_hic', False):
+if config["bin"].get("make_hic", False):
     library_coolers += expand(
         f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{min_resolution}.hic",
         library=LIBRARY_RUN_FASTQS.keys(),
@@ -86,7 +86,7 @@ if "library_groups" in config["input"] and len(config["input"]["library_groups"]
         library_group=config["input"]["library_groups"].keys(),
         filter_name=list(config["bin"]["filters"].keys()),
     )
-    if config['bin'].get('make_hic', False):
+    if config["bin"].get("make_hic", False):
         library_group_coolers += expand(
             f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{min_resolution}.hic",
             library_group=config["input"]["library_groups"].keys(),
@@ -251,7 +251,7 @@ checkpoint chunk_fastq:
     output:
         directory(f"{processed_fastqs_folder}/{{library}}/{{run}}"),
     log:
-        "logs/chunk_runs/{library}.{run}.tsv"
+        "logs/chunk_runs/{library}.{run}.tsv",
     benchmark:
         "benchmarks/chunk_runs/{library}.{run}.tsv"
     shell:
@@ -280,6 +280,7 @@ rule fastqc:
     threads: 1
     wrapper:
         "v3.10.1/bio/fastqc"
+
 
 # Depending on the mapper, the index files will be different
 if config["map"]["mapper"] == "bwa-mem":
@@ -317,9 +318,13 @@ else:  # bwa-meme
     )
 
 if config["map"]["mapper"] == "chromap":
+
     ruleorder: map_chunks_chromap > parse_sort_chunks
+
 else:
+
     ruleorder: parse_sort_chunks > map_chunks_chromap
+
 
 rule bwaindex:
     input:
@@ -335,6 +340,7 @@ rule bwaindex:
     wrapper:
         "v2.2.1/bio/bwa-memx/index"
 
+
 rule chromap_index:
     input:
         genome=genome_path,
@@ -346,6 +352,7 @@ rule chromap_index:
         "envs/chromap.yml"
     shell:
         "chromap -i -r {input.genome} -o {output.idx} >{log} 2>&1"
+
 
 # faidx doesn't work with gzipped files :( So test fails, but probably should work
 # with .fa, need to check
@@ -478,6 +485,7 @@ rule parse_sort_chunks:
         >{log[0]} 2>&1
         """
 
+
 rule map_chunks_chromap:
     input:
         reads=lambda wildcards: (
@@ -494,7 +502,7 @@ rule map_chunks_chromap:
         reference=genome_path,
         idx=multiext(genome_path, ".chromap.index"),
     params:
-        extra=config["map"].get("mapping_options", ''),
+        extra=config["map"].get("mapping_options", ""),
     threads: 8
     output:
         f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.pairs.gz",
@@ -514,6 +522,7 @@ rule map_chunks_chromap:
         -1 {input.reads[0]} -2 {input.reads[1]} -o /dev/stdout 2>{log} | \
         bgzip > {output} \
         """
+
 
 # Find out the chunk ids for each library and run - since we don't know them beforehand
 def get_pair_chunks(wildcards):
@@ -551,9 +560,15 @@ rule merge_runs:
         >{log[0]} 2>&1
         """
 
+
 if config["parse"]["make_pairsam"]:
-    bytile_arg = "--keep-parent-id --output-bytile-stats {output[7]}" if config['dedup'].get('save_by_tile_dups', False) else ""
-    dedup_command = """pairtools dedup {params.dedup_options} \
+    bytile_arg = (
+        "--keep-parent-id --output-bytile-stats {output[7]}"
+        if config["dedup"].get("save_by_tile_dups", False)
+        else ""
+    )
+    dedup_command = (
+        """pairtools dedup {params.dedup_options} \
         --max-mismatch {params.max_mismatch_bp} \
         --mark-dups \
         --output \
@@ -572,7 +587,10 @@ if config["parse"]["make_pairsam"]:
                 --output-sam {output[5]} \
              ) \
         --output-stats {output[6]} \
-        """ + bytile_arg + " && pairix {output[0]}"
+        """
+        + bytile_arg
+        + " && pairix {output[0]}"
+    )
     merge_output = multiext(
         f"{pairs_library_folder}/{{library}}.{assembly}",
         ".nodups.pairs.gz",
@@ -585,15 +603,23 @@ if config["parse"]["make_pairsam"]:
         ".nodups.pairs.gz.px2",
     )
 else:
-    bytile_arg = "--keep-parent-id --output-bytile-stats {output[5]}" if config['dedup'].get('save_by_tile_dups', False) else ""
-    dedup_command = """pairtools dedup {params.dedup_options} \
+    bytile_arg = (
+        "--keep-parent-id --output-bytile-stats {output[5]}"
+        if config["dedup"].get("save_by_tile_dups", False)
+        else ""
+    )
+    dedup_command = (
+        """pairtools dedup {params.dedup_options} \
         --max-mismatch {params.max_mismatch_bp} \
         --mark-dups \
         --output {output[0]} \
         --output-unmapped {output[1]} \
         --output-dups {output[2]} \
         --output-stats {output[3]} \
-        """ + bytile_arg + " && pairix {output[0]}"
+        """
+        + bytile_arg
+        + " && pairix {output[0]}"
+    )
     merge_output = multiext(
         f"{pairs_library_folder}/{{library}}.{assembly}",
         ".nodups.pairs.gz",
@@ -602,7 +628,7 @@ else:
         ".dedup.stats",
         ".nodups.pairs.gz.px2",
     )
-if config['dedup'].get('save_by_tile_dups', False):
+if config["dedup"].get("save_by_tile_dups", False):
     merge_output += [f"{pairs_library_folder}/{{library}}.{assembly}.by_tile_dups.txt"]
 
 
@@ -730,6 +756,7 @@ rule merge_zoom_library_group_coolers:
         >{{log[0]}} 2>&1
         """
 
+
 rule mcool2hic_group:
     input:
         mcool=f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
@@ -743,12 +770,13 @@ rule mcool2hic_group:
         "envs/hictk.yml"
     threads: 8
     params:
-        tmpdir=coolers_library_group_folder
+        tmpdir=coolers_library_group_folder,
     shell:
         """
         hictk convert --threads {threads} --tmpdir {params.tmpdir} \
         {input.mcool} {output.hic} >{log} 2>&1
         """
+
 
 use rule mcool2hic_group as mcool2hic_library with:
     input:
@@ -759,6 +787,7 @@ use rule mcool2hic_group as mcool2hic_library with:
         "logs/mcool2hic/{library}.{filter_name}.{min_resolution}.log",
     benchmark:
         "benchmarks/mcool2hic/{library}.{filter_name}.{min_resolution}.tsv"
+
 
 rule scaling_pairs_library:
     input:
@@ -828,14 +857,16 @@ rule multiqc:
         expand(
             f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
             library_group=config["input"]["library_groups"].keys(),
-        ) if "library_groups" in config["input"] else [],
+        )
+        if "library_groups" in config["input"]
+        else [],
     conda:
         "envs/multiqc.yml"
     log:
         "logs/multiqc.log",
     params:
-        input_dirs = lambda wildcards, input: list(set([Path(f).parent for f in input])),
-        outdir = lambda wildcards, output: Path(output[0]).parent,
+        input_dirs=lambda wildcards, input: list(set([Path(f).parent for f in input])),
+        outdir=lambda wildcards, output: Path(output[0]).parent,
     output:
         report=f"{multiqc_folder}/multiqc_report.html",
         dir=directory(multiqc_folder),
@@ -843,6 +874,7 @@ rule multiqc:
         """multiqc -f --outdir {output.dir} -m pairtools -m fastqc \
         {params.input_dirs} \
         >{log} 2>&1"""
+
 
 rule resgen_upload_library_group:
     input:
