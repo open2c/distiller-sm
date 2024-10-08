@@ -170,7 +170,7 @@ wildcard_constraints:
 #         extra=lambda wildcards: fasterq_dump_extra[wildcards.accession],
 #     threads: 4
 #     wrapper:
-#         "v2.2.1/bio/sra-tools/fasterq-dump"
+#         "v4.6.0/bio/sra-tools/fasterq-dump"
 
 
 # rule rename_downloaded_fastq:
@@ -279,7 +279,7 @@ rule fastqc:
         "benchmarks/fastqc/{library}.{run}.{side}.tsv"
     threads: 1
     wrapper:
-        "v3.10.1/bio/fastqc"
+        "v4.6.0/bio/fastqc"
 
 
 # Depending on the mapper, the index files will be different
@@ -338,7 +338,7 @@ rule bwaindex:
         f"logs/bwa-memx_index/{assembly}.log",
     cache: True
     wrapper:
-        "v2.2.1/bio/bwa-memx/index"
+        "v4.6.0/bio/bwa-memx/index"
 
 
 rule chromap_index:
@@ -366,7 +366,7 @@ rule chromap_index:
 #     params:
 #         extra="",  # optional params string
 #     wrapper:
-#         "v2.2.1/bio/samtools/faidx"
+#         "v4.6.0/bio/samtools/faidx"
 
 
 # rule make_chromsizes:
@@ -401,7 +401,7 @@ rule trim:
         json=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.fastp.json",
         html=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.fastp.html",
     wrapper:
-        "v2.2.1/bio/fastp"
+        "v4.6.0/bio/fastp"
 
 
 # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
@@ -443,7 +443,7 @@ rule map_chunks_bwa:
     benchmark:
         "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.tsv"
     wrapper:
-        "v2.2.1/bio/bwa-memx/mem"
+        "v4.6.0/bio/bwa-memx/mem"
 
 
 use rule map_chunks_bwa as map_chunks_bwa_pipe with:
