@@ -689,9 +689,7 @@ rule bin_pairs_library:
         bgzip -dc -@ {{threads}} {{input.pairs}} {{params.filter_command}} | cooler cload pairs \
         -c1 2 -p1 3 -c2 4 -p2 5 \
         --assembly {assembly} \
-        {{input.chromsizes}}:{{wildcards.min_resolution}} \
-        - \
-        {{output.cool}} >{{log[0]}} 2>&1
+        {{input.chromsizes}}:{{wildcards.min_resolution}} - {{output.cool}} >{{log[0]}} 2>&1
         """
 
 
