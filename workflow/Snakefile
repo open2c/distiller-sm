@@ -686,8 +686,7 @@ rule bin_pairs_library:
         "benchmarks/bin_pairs_library/{library}.{filter_name}.{min_resolution}.tsv"
     shell:
         f"""
-        bgzip -dc -@ {{threads}} {{input.pairs}} {{params.filter_command}} | cooler cload pairs \
-        -c1 2 -p1 3 -c2 4 -p2 5 \
+        bgzip -dc -@ {{threads}} {{input.pairs}} {{params.filter_command}} | cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 \
         --assembly {assembly} \
         {{input.chromsizes}}:{{wildcards.min_resolution}} - {{output.cool}} >{{log[0]}} 2>&1
         """
