@@ -351,7 +351,7 @@ rule chromap_index:
     conda:
         "envs/chromap.yml"
     shell:
-        "chromap -i -r {input.genome} -o {output.idx} >{log} 2>&1"
+        r"chromap -i -r {input.genome} -o {output.idx} >{log} 2>&1"
 
 
 # faidx doesn't work with gzipped files :( So test fails, but probably should work
@@ -477,7 +477,7 @@ rule parse_sort_chunks:
     log:
         "logs/parse_sort_chunks/{library}.{run}.{chunk_id}.log",
     shell:
-        """
+        r"""
         pairtools parse {params.dropsam_flag} {params.dropreadid_flag} {params.dropseq_flag} \
         {params.parsing_options} \
         -c {input.chromsizes} {input.bam} \
@@ -516,7 +516,7 @@ rule map_chunks_chromap:
         # chromap doesn't output gzip files, so we need to pipe it to bgzip
         # It doesn't work with low memory mode, so we can't use the hic preset
         # Hence I provide all arguments manually except for --low-mem
-        """
+        r"""
         chromap -e 4 -q 1 --split-alignment --pairs -x {input.idx} -r {input.reference} \
         -t {threads} {params.extra} \
         -1 {input.reads[0]} -2 {input.reads[1]} -o /dev/stdout 2>{log} | \
@@ -556,7 +556,7 @@ rule merge_runs:
             else f"cp {input} {output}"
         ),
     shell:
-        """{params.command} \
+        r"""{params.command} \
         >{log[0]} 2>&1
         """
 
@@ -656,7 +656,7 @@ rule merge_dedup:
     benchmark:
         "benchmarks/merge_dedup/{library}.tsv"
     shell:
-        "{params.merge_command}" + dedup_command + " >{log[0]} 2>&1"
+        r"{params.merge_command}" + dedup_command + " >{log[0]} 2>&1"
 
 
 # balance_args = "--balance" if {config["bin"].get("balance", True)} else ""
@@ -675,6 +675,7 @@ rule bin_pairs_library:
             if config["bin"]["filters"][wildcards.filter_name]
             else ""
         ),
+        assembly=assembly,
     threads: 4
     conda:
         "envs/pairtools_cooler.yml"
@@ -685,10 +686,10 @@ rule bin_pairs_library:
     benchmark:
         "benchmarks/bin_pairs_library/{library}.{filter_name}.{min_resolution}.tsv"
     shell:
-        f"""
-        bgzip -dc -@ {{threads}} {{input.pairs}} {{params.filter_command}} | cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 \
-        --assembly {assembly} \
-        {{input.chromsizes}}:{{wildcards.min_resolution}} - {{output.cool}} >{{log[0]}} 2>&1
+        r"""
+        bgzip -dc -@ {threads} {input.pairs} {params.filter_command} | cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 \
+        --assembly {params.assembly} \
+        {input.chromsizes}:{wildcards.min_resolution} - {output.cool} >{log[0]} 2>&1
         """
 
 
@@ -729,9 +730,11 @@ rule merge_zoom_library_group_coolers:
             f"{coolers_library_folder}/{{library}}.{assembly}.{wildcards.filter_name}.{wildcards.min_resolution}.cool",
             library=config["input"]["library_groups"][wildcards.library_group],
         ),
-    params:
-        res_string=",".join([str(res) for res in config["bin"]["resolutions"]]),
-        balance_args=lambda wildcards, threads: f"--balance-args '{config['bin'].get('balance_options', '')} --nproc {threads}'",
+        balance_args=lambda wildcards, threads: (
+            f"--balance --balance-args '{config['bin'].get('balance_options', '')} --nproc {threads}'"
+            if config["bin"]["balance"]
+            else ""
+        ),
     threads: 8
     conda:
         "envs/pairtools_cooler.yml"
@@ -743,17 +746,16 @@ rule merge_zoom_library_group_coolers:
     benchmark:
         "benchmarks/merge_zoom_library_group_coolers/{library_group}.{filter_name}.{min_resolution}.tsv"
     shell:
-        f"""
+        r"""
         cooler merge {{output.cool}} {{input}} >{{log[0]}} 2>&1
 
         cooler zoomify \
-        --nproc {{threads}} \
-        --out {{output.mcool}} \
-        --resolutions {{params.res_string}} \
-        {"--balance" if config['bin']['balance'] else ""} \
-        {{params.balance_args}} \
-        {{output.cool}} \
-        >{{log[0]}} 2>&1
+        --nproc {threads} \
+        --out {output.mcool} \
+        --resolutions {{params.res_string} \
+        {params.balance_args} \
+        {output.cool} \
+        >{{og[0]} 2>&1
         """
 
 
@@ -772,7 +774,7 @@ rule mcool2hic_group:
     params:
         tmpdir=coolers_library_group_folder,
     shell:
-        """
+        r"""
         hictk convert --threads {threads} --tmpdir {params.tmpdir} \
         {input.mcool} {output.hic} >{log} 2>&1
         """
@@ -786,7 +788,7 @@ use rule mcool2hic_group as mcool2hic_library with:
     log:
         "logs/mcool2hic/{library}.{filter_name}.{min_resolution}.log",
     benchmark:
-        "benchmarks/mcool2hic/{library}.{filter_name}.{min_resolution}.tsv"
+        r"benchmarks/mcool2hic/{library}.{filter_name}.{min_resolution}.tsv"
 
 
 rule scaling_pairs_library:
@@ -808,7 +810,7 @@ rule scaling_pairs_library:
     benchmark:
         "benchmarks/scaling_pairs_library/{library}.tsv"
     shell:
-        """
+        r"""
         pairtools scaling \
         --dist-range {params.min_distance} {params.max_distance} \
         --n-dist-bins-decade {params.n_dist_bins_decade} \
@@ -844,7 +846,7 @@ rule merge_stats_libraries_into_groups:
     output:
         f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
     shell:
-        "pairtools stats --merge {input} -o {output} >{log[0]} 2>&1"
+        r"pairtools stats --merge {input} -o {output} >{log[0]} 2>&1"
 
 
 rule multiqc:
@@ -871,7 +873,7 @@ rule multiqc:
         report=f"{multiqc_folder}/multiqc_report.html",
         dir=directory(multiqc_folder),
     shell:
-        """multiqc -f --outdir {output.dir} -m pairtools -m fastqc \
+        r"""multiqc -f --outdir {output.dir} -m pairtools -m fastqc \
         {params.input_dirs} \
         >{log} 2>&1"""
 
@@ -892,7 +894,7 @@ rule resgen_upload_library_group:
             f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool_uploaded"
         ),
     shell:
-        """resgen sync datasets '{params.user}' '{params.project}' {input.mcool} \
+        r"""resgen sync datasets '{params.user}' '{params.project}' {input.mcool} \
         --tag filetype:cooler --tag assembly:{params.assembly} --tag datatype:matrix \
         >{log[0]} 2>&1
         """
