@@ -754,7 +754,7 @@ rule merge_zoom_library_group_coolers:
         cooler zoomify \
         --nproc {threads} \
         --out {output.mcool} \
-        --resolutions {{params.res_string} \
+        --resolutions {params.res_string} \
         {params.balance_args} \
         {output.cool} \
         >{{og[0]} 2>&1
