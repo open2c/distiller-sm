@@ -730,6 +730,8 @@ rule merge_zoom_library_group_coolers:
             f"{coolers_library_folder}/{{library}}.{assembly}.{wildcards.filter_name}.{wildcards.min_resolution}.cool",
             library=config["input"]["library_groups"][wildcards.library_group],
         ),
+    params:
+        res_string=",".join([str(res) for res in config["bin"]["resolutions"]]),
         balance_args=lambda wildcards, threads: (
             f"--balance --balance-args '{config['bin'].get('balance_options', '')} --nproc {threads}'"
             if config["bin"]["balance"]
