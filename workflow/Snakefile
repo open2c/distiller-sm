@@ -757,7 +757,7 @@ rule merge_zoom_library_group_coolers:
         --resolutions {params.res_string} \
         {params.balance_args} \
         {output.cool} \
-        >{{og[0]} 2>&1
+        >{og[0]} 2>&1
         """
 
 
