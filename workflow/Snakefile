@@ -435,7 +435,7 @@ rule map_chunks_bwa:
         extra="-SP",
         sort="none",
         dedup="none",
-    threads: 8
+    threads: 4
     output:
         f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
     log:
@@ -749,7 +749,7 @@ rule merge_zoom_library_group_coolers:
         "benchmarks/merge_zoom_library_group_coolers/{library_group}.{filter_name}.{min_resolution}.tsv"
     shell:
         r"""
-        cooler merge {{output.cool}} {{input}} >{{log[0]}} 2>&1
+        cooler merge {output.cool} {input} >{log[0]} 2>&1
 
         cooler zoomify \
         --nproc {threads} \
@@ -757,7 +757,7 @@ rule merge_zoom_library_group_coolers:
         --resolutions {params.res_string} \
         {params.balance_args} \
         {output.cool} \
-        >{og[0]} 2>&1
+        >{log[0]} 2>&1
         """
 
 
