@@ -2,6 +2,6 @@ name: hictk_env
 channels:
   - conda-forge
   - bioconda
-  - defaults
+  - nodefaults
 dependencies:
   - hictk

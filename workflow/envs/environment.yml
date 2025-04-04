@@ -2,7 +2,7 @@ name: distiller-sm
 channels:
     - conda-forge
     - bioconda
-    - defaults
+    - nodefaults
 dependencies:
     - python>=3.8,<3.11
     - snakemake

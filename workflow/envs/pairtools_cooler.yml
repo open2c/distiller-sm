@@ -2,7 +2,7 @@ name: pairtools_cooler_env
 channels:
   - conda-forge
   - bioconda
-  - defaults
+  - nodefaults
 dependencies:
   - python>=3.8
   - pairtools>=1.1.0
