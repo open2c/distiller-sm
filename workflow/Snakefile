@@ -69,8 +69,9 @@ library_coolers = expand(
     library=LIBRARY_RUN_FASTQS.keys(),
     filter_name=list(config["bin"]["filters"].keys()),
 )
+library_hic = []
 if config["bin"].get("make_hic", False):
-    library_coolers += expand(
+    library_hic += expand(
         f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{min_resolution}.hic",
         library=LIBRARY_RUN_FASTQS.keys(),
         filter_name=list(config["bin"]["filters"].keys()),
@@ -78,6 +79,7 @@ if config["bin"].get("make_hic", False):
 
 # Setting up the library group cooler and group stats outputs
 library_group_coolers = []
+library_group_hic = []
 library_group_stats = []
 # library_group_scaling_pairs = []
 if "library_groups" in config["input"] and len(config["input"]["library_groups"]) > 0:
@@ -87,7 +89,7 @@ if "library_groups" in config["input"] and len(config["input"]["library_groups"]
         filter_name=list(config["bin"]["filters"].keys()),
     )
     if config["bin"].get("make_hic", False):
-        library_group_coolers += expand(
+        library_group_hic = expand(
             f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{min_resolution}.hic",
             library_group=config["input"]["library_groups"].keys(),
             filter_name=list(config["bin"]["filters"].keys()),
@@ -117,8 +119,10 @@ resgen_uploads = (
 rule default:
     input:
         library_group_coolers,
+        library_group_hic,
         library_group_stats,
         library_coolers,
+        library_hic,
         library_scaling_pairs,
         # library_group_scaling_pairs,
         fastqc,
