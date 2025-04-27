@@ -902,7 +902,7 @@ rule resgen_upload_library_group:
     shell:
         r"""resgen sync datasets '{params.user}' '{params.project}' {input.mcool} \
         --tag filetype:cooler --tag assembly:{params.assembly} --tag datatype:matrix \
-        --force-update \
+        --force-update true \
         >{log[0]} 2>&1
         """
 
