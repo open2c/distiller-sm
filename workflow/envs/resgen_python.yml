@@ -7,4 +7,4 @@ dependencies:
   - python<=3.10
   - pip
   - pip:
-    - resgen-python
+    - resgen-python==0.7.1
