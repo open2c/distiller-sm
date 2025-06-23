@@ -137,8 +137,29 @@ parse:
     # enables storing MAPQ scores in the .pairsam/.pairs output, which are
     # used later for filtering/binning. The default walks-policy is 'mask'
     # which masks complex walks in long reads.
-    parsing_options: '--add-columns mapq --walks-policy mask'
+    parsing_options: '--add-columns mapq --walks-policy 5unique'
 
+    # Phasing only works with 'bwa-mem', 'bwa-mem2' or bwa-meme mappers.
+    # If 'do_phase' is True, distiller will try to phase Hi-C pairs using
+    # the 'tag_mode' and 'suffixes' parameters.
+    # 'tag_mode' can be 'XA' (default) or 'XB'.
+    # 'XB' mode is slightly more accurate, but requires the 'bwa-mem' mapper with
+    # version of 'bwa-mem' that supports 'XB' tags (>=0.7.18).
+    # Suffixes are used to identify phases of chromosomes in the reference genome.
+    # For example, if the reference genome has chromosomes 'chr1_cast', 'chr1_129',
+    # then the suffixes '_cast' and '_129' will be used to identify the phases.
+    # If 'do_phase' is False, no phasing will be performed.
+    # NOTE: phasing requires parsing with --min-mapq 0 --add-columns XA,NM,AS,XS,mapq
+    # (or XB,NM,AS,XS,mapq for 'XB' tag mode). This means that the
+    # 'parsing_options' parameter must include these options, and that the phased pairs
+    # contain multimapped reads. Please take care of the correct filtering of
+    # phased pairs in the binning step.
+    phase: 
+        do_phase: True
+        tag_mode: 'XA'
+        suffixes:
+            - '_cast'
+            - '_129'
 # Control how PCR/optical duplicates are detected in the data.
 dedup:
     # PCR/optical duplicates are detected as Hi-C pairs with matching locations
@@ -147,6 +168,7 @@ dedup:
     # duplicates.
     max_mismatch_bp: 0
     save_by_tile_dups: True
+    dedup_options: ""
 
 # Scaling, or P(s), calculated using pairtools on the output of deduplication.
 # Output stored next to the deduplicated pairs.
