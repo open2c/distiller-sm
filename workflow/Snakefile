@@ -114,14 +114,12 @@ resgen_uploads = (
 
 # Some sanity checks
 # Phasing
-if config.get('phase', {}).get('do_phase', False):
+if config['parse'].get('phase', {}).get('do_phase', False):
     if config['map']['mapper']=='chromap':
         raise ValueError(
             "Phasing is not possible with chromap, please use bwa-mem, bwa-mem2 or bwa-meme."
         )
-    parse_args = shlex.split(config['parse'].get('parsing_options', ''))
-    parse_options = {k: True if v.startswith('-') else v
-           for k,v in zip(args, args[1:]+["--"]) if k.startswith('-')}
+    parse_options = argstring_to_dict(config['parse'].get('parsing_options', ''))
     if '--min-mapq' not in parse_options or parse_options['--min-mapq'] != '0':
         raise ValueError(
             "Plase set '--min-mapq to 0' in the parsing options to use phasing."
@@ -130,17 +128,15 @@ if config.get('phase', {}).get('do_phase', False):
         raise ValueError(
             "Please set the appropriate --add-columns argument in the parsing options to use phasing."
         )
-    elif config['phase']['tag_mode']=='XA' and not set('XA', 'NM', 'AS', 'XS', 'mapq').issubset(set(parse_options['--add-columns'].split(','))):
+    elif config['parse']['phase']['tag_mode']=='XA' and not set(['XA', 'NM', 'AS', 'XS', 'mapq']).issubset(set(parse_options['--add-columns'].split(','))):
         raise ValueError(
             "Please set '--add-columns XA,NM,AS,XS,mapq' in the parsing options to use phasing with XA tag mode."
         )
-    elif config['phase']['tag_mode']=='XB' and not set('XB', 'NM', 'AS', 'XS', 'mapq').issubset(set(parse_options['--add-columns'].split(','))):
+    elif config['parse']['phase']['tag_mode']=='XB' and not set(['XB', 'NM', 'AS', 'XS', 'mapq']).issubset(set(parse_options['--add-columns'].split(','))):
         raise ValueError(
             "Please set '--add-columns XB,NM,AS,XS,mapq' in the parsing options to use phasing with XB tag mode."
         )
-    dedup_args = shlex.split(config["dedup"].get("dedup_options", ""))
-    dedup_options = {k: True if v.startswith('-') else v
-           for k,v in zip(dedup_args, dedup_args[1:]+["--"]) if k.startswith('-')}
+    dedup_options = argstring_to_dict(config["dedup"].get("dedup_options", ""))
     if '--extra-col-pair' not in dedup_options or 'phase1 phase2' not in dedup_options['--extra-col-pair']:
         raise ValueError(
             "Please set '--extra-col-pair phase1 phase2' in the dedup options to use phasing."
