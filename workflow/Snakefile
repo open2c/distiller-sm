@@ -688,7 +688,7 @@ rule merge_dedup:
         ),
         phase_command=lambda wildcards: (
             f'| pairtools phase --tag-mode {config["phase"]["tag_mode"]} --suffixes {' '.join(config["phase"]["suffixes"])} '
-            if config.get("phase", {}).get("phase_command", False)
+            if config.get("phase", {}).get("do_phase", False)
             else ""
         ),
     threads: 4
