@@ -136,7 +136,8 @@ if config['parse'].get('phase', {}).get('do_phase', False):
         raise ValueError(
             "Please set '--add-columns XB,NM,AS,XS,mapq' in the parsing options to use phasing with XB tag mode."
         )
-    dedup_options = config["dedup"].get("dedup_options", "")
+    # simpler check, should be enough and in case of multiple extra col pairs, where the dict would only record the last one...
+    dedup_options = config["dedup"].get("dedup_options", "") 
     if '--extra-col-pair phase1 phase2' not in dedup_options:
         raise ValueError(
             "Please add '--extra-col-pair phase1 phase2' in the dedup options to use phasing."
