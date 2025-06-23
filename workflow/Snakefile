@@ -136,10 +136,10 @@ if config['parse'].get('phase', {}).get('do_phase', False):
         raise ValueError(
             "Please set '--add-columns XB,NM,AS,XS,mapq' in the parsing options to use phasing with XB tag mode."
         )
-    dedup_options = argstring_to_dict(config["dedup"].get("dedup_options", ""))
-    if '--extra-col-pair' not in dedup_options or 'phase1 phase2' not in dedup_options['--extra-col-pair']:
+    dedup_options = config["dedup"].get("dedup_options", "")
+    if '--extra-col-pair phase1 phase2' not in dedup_options:
         raise ValueError(
-            "Please set '--extra-col-pair phase1 phase2' in the dedup options to use phasing."
+            "Please add '--extra-col-pair phase1 phase2' in the dedup options to use phasing."
         )
 
 
@@ -683,8 +683,8 @@ rule merge_dedup:
             else f"bgzip -dc -@ {threads-1} {input} | "
         ),
         phase_command=lambda wildcards: (
-            f'| pairtools phase --tag-mode {config["phase"]["tag_mode"]} --suffixes {' '.join(config["phase"]["suffixes"])} '
-            if config.get("phase", {}).get("do_phase", False)
+            f'pairtools phase --tag-mode {config['parse']["phase"]["tag_mode"]} --phase-suffixes {' '.join(config['parse']["phase"]["suffixes"])} | '
+            if config['parse'].get("phase", {}).get("do_phase", False)
             else ""
         ),
     threads: 4
