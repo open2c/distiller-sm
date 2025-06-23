@@ -2,7 +2,7 @@ from pathlib import Path
 import yaml
 from urllib.parse import urlparse
 import pandas as pd
-
+import shlex
 
 include: "rules/common.smk"
 
@@ -111,6 +111,40 @@ resgen_uploads = (
     if config["resgen"]["upload"]
     else []
 )
+
+# Some sanity checks
+# Phasing
+if config.get('phase', {}).get('do_phase', False):
+    if config['map']['mapper']=='chromap':
+        raise ValueError(
+            "Phasing is not possible with chromap, please use bwa-mem, bwa-mem2 or bwa-meme."
+        )
+    parse_args = shlex.split(config['parse'].get('parsing_options', ''))
+    parse_options = {k: True if v.startswith('-') else v
+           for k,v in zip(args, args[1:]+["--"]) if k.startswith('-')}
+    if '--min-mapq' not in parse_options or parse_options['--min-mapq'] != '0':
+        raise ValueError(
+            "Plase set '--min-mapq to 0' in the parsing options to use phasing."
+        )
+    if '--add-columns' not in parse_options:
+        raise ValueError(
+            "Please set the appropriate --add-columns argument in the parsing options to use phasing."
+        )
+    elif config['phase']['tag_mode']=='XA' and not set('XA', 'NM', 'AS', 'XS', 'mapq').issubset(set(parse_options['--add-columns'].split(','))):
+        raise ValueError(
+            "Please set '--add-columns XA,NM,AS,XS,mapq' in the parsing options to use phasing with XA tag mode."
+        )
+    elif config['phase']['tag_mode']=='XB' and not set('XB', 'NM', 'AS', 'XS', 'mapq').issubset(set(parse_options['--add-columns'].split(','))):
+        raise ValueError(
+            "Please set '--add-columns XB,NM,AS,XS,mapq' in the parsing options to use phasing with XB tag mode."
+        )
+    dedup_args = shlex.split(config["dedup"].get("dedup_options", ""))
+    dedup_options = {k: True if v.startswith('-') else v
+           for k,v in zip(dedup_args, dedup_args[1:]+["--"]) if k.startswith('-')}
+    if '--extra-col-pair' not in dedup_options or 'phase1 phase2' not in dedup_options['--extra-col-pair']:
+        raise ValueError(
+            "Please set '--extra-col-pair phase1 phase2' in the dedup options to use phasing."
+        )
 
 
 # List of all required outputs of the workflow
@@ -636,6 +670,8 @@ if config["dedup"].get("save_by_tile_dups", False):
     merge_output += [f"{pairs_library_folder}/{{library}}.{assembly}.by_tile_dups.txt"]
 
 
+    
+
 rule merge_dedup:
     input:
         pairs=lambda wildcards: expand(
@@ -650,6 +686,11 @@ rule merge_dedup:
             if len(input) > 1
             else f"bgzip -dc -@ {threads-1} {input} | "
         ),
+        phase_command=lambda wildcards: (
+            f'| pairtools phase --tag-mode {config["phase"]["tag_mode"]} --suffixes {' '.join(config["phase"]["suffixes"])} '
+            if config.get("phase", {}).get("phase_command", False)
+            else ""
+        ),
     threads: 4
     conda:
         "envs/pairtools_cooler.yml"
@@ -660,7 +701,7 @@ rule merge_dedup:
     benchmark:
         "benchmarks/merge_dedup/{library}.tsv"
     shell:
-        r"{params.merge_command}" + dedup_command + " >{log[0]} 2>&1"
+        r"{params.merge_command}" + r"{params.phase_command}" + dedup_command + " >{log[0]} 2>&1"
 
 
 # balance_args = "--balance" if {config["bin"].get("balance", True)} else ""
