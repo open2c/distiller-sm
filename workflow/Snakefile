@@ -653,7 +653,7 @@ else:
         --output-stats {output[3]} \
         """
         + bytile_arg
-        + " && pairix {output[0]}"
+        + " >{log[0]} 2>&1 && pairix {output[0]}"
     )
     merge_output = multiext(
         f"{pairs_library_folder}/{{library}}.{assembly}",
@@ -666,8 +666,6 @@ else:
 if config["dedup"].get("save_by_tile_dups", False):
     merge_output += [f"{pairs_library_folder}/{{library}}.{assembly}.by_tile_dups.txt"]
 
-
-    
 
 rule merge_dedup:
     input:
@@ -683,10 +681,10 @@ rule merge_dedup:
             if len(input) > 1
             else f"bgzip -dc -@ {threads-1} {input} | "
         ),
-        phase_command=lambda wildcards: (
-            f'pairtools phase --tag-mode {config["phase"]["tag_mode"]} --phase-suffixes {' '.join(config["phase"]["suffixes"])} | '
+        phase_command=lambda wildcards, threads: (
+            f'pairtools phase --tag-mode {config["phase"]["tag_mode"]} --phase-suffixes {" ".join(config["phase"]["suffixes"])} | pairtools sort --nproc {threads - 1} | '
             if config.get("phase", {}).get("do_phase", False)
-            else ""
+            else ''
         ),
     threads: 4
     conda:
