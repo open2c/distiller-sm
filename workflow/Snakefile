@@ -138,7 +138,7 @@ if config.get('phase', {}).get('do_phase', False):
         )
     # simpler check, should be enough and in case of multiple extra col pairs, where the dict would only record the last one...
     dedup_options = config["dedup"].get("dedup_options", "") 
-    if '--extra-col-pair phase1 phase2' not in dedup_options:
+    if '--extra-col-pair phase1 phase1' not in dedup_options or '--extra-col-pair phase2 phase2' not in dedup_options:
         raise ValueError(
             "Please add '--extra-col-pair phase1 phase2' in the dedup options to use phasing."
         )

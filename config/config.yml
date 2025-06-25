@@ -400,6 +400,9 @@ parse:
     # 'parsing_options' parameter must include these options, and that the phased pairs
     # contain multimapped reads. Please take care of the correct filtering of
     # phased pairs in the binning step.
+    # Additionally, you probably want to add the following into the dedup_options, to
+    # take phasing into account at that step:
+    # --extra-col-pair phase1 phase1 --extra-col-pair phase2 phase2
     phase: 
         do_phase: False
         tag_mode: XA
