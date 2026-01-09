@@ -27,289 +27,44 @@
 # project folder or as absolute paths.
 input:
     raw_reads_paths:
-        Cl_01A03_NT_captured_test:
+        MATalpha_R1:
             lane1:
-                - ../../seqdata/3975F1-1_250411_A01563_0288_BHWFCMDRX5_CGAATACG-GTCGGTAA_L001_R1_001.fastq.gz
-                - ../../seqdata/3975F1-1_250411_A01563_0288_BHWFCMDRX5_CGAATACG-GTCGGTAA_L001_R2_001.fastq.gz
-        Cl_01A03_dTAG_captured_test:
+                - test/fastq/MATalpha_R1/lane1/SRR2601842_1.fastq.gz
+                - test/fastq/MATalpha_R1/lane1/SRR2601842_2.fastq.gz
+            lane2:
+                - sra:SRR2601843?start=0&end=100000
+        MATalpha_R2:
             lane1:
-                - ../../seqdata/3975F2-1_250411_A01563_0288_BHWFCMDRX5_GTCCTTGA-TCAGACGA_L001_R1_001.fastq.gz
-                - ../../seqdata/3975F2-1_250411_A01563_0288_BHWFCMDRX5_GTCCTTGA-TCAGACGA_L001_R2_001.fastq.gz
-        Cl_01F12_NT_captured_test:
+                - test/fastq/MATalpha_R2/lane1/SRR2601845_1.fastq.gz
+                - test/fastq/MATalpha_R2/lane1/SRR2601845_2.fastq.gz
+        MATa_R1:
             lane1:
-                - ../../seqdata/3975F3-1_250411_A01563_0288_BHWFCMDRX5_CAGTGCTT-ACCTGGAA_L001_R1_001.fastq.gz
-                - ../../seqdata/3975F3-1_250411_A01563_0288_BHWFCMDRX5_CAGTGCTT-ACCTGGAA_L001_R2_001.fastq.gz
-        Cl_01F12_dTAG_captured_test:
+                - test/fastq/MATa_R1/lane1/SRR2601848_1.fastq.gz
+                - test/fastq/MATa_R1/lane1/SRR2601848_2.fastq.gz
+        MATa_R2:
             lane1:
-                - ../../seqdata/3975F4-1_250411_A01563_0288_BHWFCMDRX5_TCCATTGC-AGACCGTA_L001_R1_001.fastq.gz
-                - ../../seqdata/3975F4-1_250411_A01563_0288_BHWFCMDRX5_TCCATTGC-AGACCGTA_L001_R2_001.fastq.gz
-        Cl_03A11_NT_captured_test:
-            lane1:
-                - ../../seqdata/3975F5-1_250411_A01563_0288_BHWFCMDRX5_GTCGATTG-ACGGTCTT_L001_R1_001.fastq.gz
-                - ../../seqdata/3975F5-1_250411_A01563_0288_BHWFCMDRX5_GTCGATTG-ACGGTCTT_L001_R2_001.fastq.gz
-        Cl_03A11_dTAG_captured_test:
-            lane1:
-                - ../../seqdata/3975F6-1_250411_A01563_0288_BHWFCMDRX5_ATAACGCC-TGAACCTG_L001_R1_001.fastq.gz
-                - ../../seqdata/3975F6-1_250411_A01563_0288_BHWFCMDRX5_ATAACGCC-TGAACCTG_L001_R2_001.fastq.gz
-        Cl_10H07_NT_captured_test:
-            lane1:
-                - ../../seqdata/3975F7-1_250411_A01563_0288_BHWFCMDRX5_GCCTTAAC-AGCTCCTA_L001_R1_001.fastq.gz
-                - ../../seqdata/3975F7-1_250411_A01563_0288_BHWFCMDRX5_GCCTTAAC-AGCTCCTA_L001_R2_001.fastq.gz
-        Cl_10H07_dTAG_captured_test:
-            lane1:
-                - ../../seqdata/3975F8-1_250411_A01563_0288_BHWFCMDRX5_GGTATAGG-CTGGAGTA_L001_R1_001.fastq.gz
-                - ../../seqdata/3975F8-1_250411_A01563_0288_BHWFCMDRX5_GGTATAGG-CTGGAGTA_L001_R2_001.fastq.gz
-        Cl_01A03_NT:
-            lane1:
-                - ../../seqdata/3919F1-1_250130_A01563_0260_BHTHVJDRX5_CGAATACG-GTCGGTAA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F1-1_250130_A01563_0260_BHTHVJDRX5_CGAATACG-GTCGGTAA_L002_R2_001.fastq.gz
-        Cl_01A03_dTAG:
-            lane1:
-                - ../../seqdata/3919F2-1_250130_A01563_0260_BHTHVJDRX5_GTCCTTGA-TCAGACGA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F2-1_250130_A01563_0260_BHTHVJDRX5_GTCCTTGA-TCAGACGA_L002_R2_001.fastq.gz
-        Cl_01F12_NT:
-            lane1:
-                - ../../seqdata/3919F3-1_250130_A01563_0260_BHTHVJDRX5_CAGTGCTT-ACCTGGAA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F3-1_250130_A01563_0260_BHTHVJDRX5_CAGTGCTT-ACCTGGAA_L002_R2_001.fastq.gz
-        Cl_01F12_dTAG:
-            lane1:
-                - ../../seqdata/3919F4-1_250130_A01563_0260_BHTHVJDRX5_TCCATTGC-AGACCGTA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F4-1_250130_A01563_0260_BHTHVJDRX5_TCCATTGC-AGACCGTA_L002_R2_001.fastq.gz
-        Cl_03A11_NT:
-            lane1:
-                - ../../seqdata/3919F5-1_250130_A01563_0260_BHTHVJDRX5_GTCGATTG-ACGGTCTT_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F5-1_250130_A01563_0260_BHTHVJDRX5_GTCGATTG-ACGGTCTT_L002_R2_001.fastq.gz
-        Cl_03A11_dTAG:
-            lane1:
-                - ../../seqdata/3919F6-1_250130_A01563_0260_BHTHVJDRX5_ATAACGCC-TGAACCTG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F6-1_250130_A01563_0260_BHTHVJDRX5_ATAACGCC-TGAACCTG_L002_R2_001.fastq.gz
-        Cl_10H07_NT:
-            lane1:
-                - ../../seqdata/3919F7-1_250130_A01563_0260_BHTHVJDRX5_GCCTTAAC-AGCTCCTA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F7-1_250130_A01563_0260_BHTHVJDRX5_GCCTTAAC-AGCTCCTA_L002_R2_001.fastq.gz
-        Cl_10H07_dTAG:
-            lane1:
-                - ../../seqdata/3919F8-1_250130_A01563_0260_BHTHVJDRX5_GGTATAGG-CTGGAGTA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F8-1_250130_A01563_0260_BHTHVJDRX5_GGTATAGG-CTGGAGTA_L002_R2_001.fastq.gz
-        Cl_01B1_NT:
-            lane1:
-                - ../../seqdata/3919F9-1_250130_A01563_0260_BHTHVJDRX5_TCTAGGAG-AGGTCACT_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F9-1_250130_A01563_0260_BHTHVJDRX5_TCTAGGAG-AGGTCACT_L002_R2_001.fastq.gz
-        Cl_01B1_dTAG:
-            lane1:
-                - ../../seqdata/3919F10-1_250130_A01563_0260_BHTHVJDRX5_TGCGTAAC-GATAGGCT_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F10-1_250130_A01563_0260_BHTHVJDRX5_TGCGTAAC-GATAGGCT_L002_R2_001.fastq.gz
-        Cl_01H07_NT:
-            lane1:
-                - ../../seqdata/3919F11-1_250130_A01563_0260_BHTHVJDRX5_CTTGCTAG-GGAGATGA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F11-1_250130_A01563_0260_BHTHVJDRX5_CTTGCTAG-GGAGATGA_L002_R2_001.fastq.gz
-        Cl_01H07_dTAG:
-            lane1:
-                - ../../seqdata/3919F12-1_250130_A01563_0260_BHTHVJDRX5_AGCGAGAT-GATACTGG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F12-1_250130_A01563_0260_BHTHVJDRX5_AGCGAGAT-GATACTGG_L002_R2_001.fastq.gz
-        Cl_03G04_NT:
-            lane1:
-                - ../../seqdata/3919F13-1_250130_A01563_0260_BHTHVJDRX5_TATGGCAC-TCTCGCAA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F13-1_250130_A01563_0260_BHTHVJDRX5_TATGGCAC-TCTCGCAA_L002_R2_001.fastq.gz
-        Cl_03G04_dTAG:
-            lane1:
-                - ../../seqdata/3919F14-1_250130_A01563_0260_BHTHVJDRX5_GAATCACC-CTTCGTTC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F14-1_250130_A01563_0260_BHTHVJDRX5_GAATCACC-CTTCGTTC_L002_R2_001.fastq.gz
-        Cl_11A07_NT:
-            lane1:
-                - ../../seqdata/3919F15-1_250130_A01563_0260_BHTHVJDRX5_GTAAGGTG-GCAATTCG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F15-1_250130_A01563_0260_BHTHVJDRX5_GTAAGGTG-GCAATTCG_L002_R2_001.fastq.gz
-        Cl_11A07_dTAG:
-            lane1:
-                - ../../seqdata/3919F16-1_250130_A01563_0260_BHTHVJDRX5_CGAGAGAA-TCTCTTCC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F16-1_250130_A01563_0260_BHTHVJDRX5_CGAGAGAA-TCTCTTCC_L002_R2_001.fastq.gz
-        Cl_01B11_NT:
-            lane1:
-                - ../../seqdata/3919F17-1_250130_A01563_0260_BHTHVJDRX5_CGCAACTA-GAATCCGA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F17-1_250130_A01563_0260_BHTHVJDRX5_CGCAACTA-GAATCCGA_L002_R2_001.fastq.gz
-        Cl_01B11_dTAG:
-            lane1:
-                - ../../seqdata/3919F18-1_250130_A01563_0260_BHTHVJDRX5_CACAGACT-TGGTACAG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F18-1_250130_A01563_0260_BHTHVJDRX5_CACAGACT-TGGTACAG_L002_R2_001.fastq.gz
-        Cl_02A11_NT:
-            lane1:
-                - ../../seqdata/3919F19-1_250130_A01563_0260_BHTHVJDRX5_TGGAAGCA-GTACTCTC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F19-1_250130_A01563_0260_BHTHVJDRX5_TGGAAGCA-GTACTCTC_L002_R2_001.fastq.gz
-        Cl_02A11_dTAG:
-            lane1:
-                - ../../seqdata/3919F20-1_250130_A01563_0260_BHTHVJDRX5_CAATAGCC-TGCGTAGA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F20-1_250130_A01563_0260_BHTHVJDRX5_CAATAGCC-TGCGTAGA_L002_R2_001.fastq.gz
-        Cl_04D01_NT:
-            lane1:
-                - ../../seqdata/3919F21-1_250130_A01563_0260_BHTHVJDRX5_CTCGAACA-GGAATTGC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F21-1_250130_A01563_0260_BHTHVJDRX5_CTCGAACA-GGAATTGC_L002_R2_001.fastq.gz
-        Cl_04D01_dTAG:
-            lane1:
-                - ../../seqdata/3919F22-1_250130_A01563_0260_BHTHVJDRX5_GGCAAGTT-CTTCTGAG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F22-1_250130_A01563_0260_BHTHVJDRX5_GGCAAGTT-CTTCTGAG_L002_R2_001.fastq.gz
-        Cl_11G10_NT:
-            lane1:
-                - ../../seqdata/3919F23-1_250130_A01563_0260_BHTHVJDRX5_AGCTACCA-CTTAGGAC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F23-1_250130_A01563_0260_BHTHVJDRX5_AGCTACCA-CTTAGGAC_L002_R2_001.fastq.gz
-        Cl_11G10_dTAG:
-            lane1:
-                - ../../seqdata/3919F24-1_250130_A01563_0260_BHTHVJDRX5_CAGCATAC-TCTAACGC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F24-1_250130_A01563_0260_BHTHVJDRX5_CAGCATAC-TCTAACGC_L002_R2_001.fastq.gz
-        Cl_01C7_NT:
-            lane1:
-                - ../../seqdata/3919F25-1_250130_A01563_0260_BHTHVJDRX5_CGTATCTC-GTACCTTG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F25-1_250130_A01563_0260_BHTHVJDRX5_CGTATCTC-GTACCTTG_L002_R2_001.fastq.gz
-        Cl_01C7_dTAG:
-            lane1:
-                - ../../seqdata/3919F26-1_250130_A01563_0260_BHTHVJDRX5_TTACGTGC-CAAGGTCT_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F26-1_250130_A01563_0260_BHTHVJDRX5_TTACGTGC-CAAGGTCT_L002_R2_001.fastq.gz
-        Cl_02C12_NT:
-            lane1:
-                - ../../seqdata/3919F27-1_250130_A01563_0260_BHTHVJDRX5_AGCTAAGC-GTAACGAC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F27-1_250130_A01563_0260_BHTHVJDRX5_AGCTAAGC-GTAACGAC_L002_R2_001.fastq.gz
-        Cl_02C12_dTAG:
-            lane1:
-                - ../../seqdata/3919F28-1_250130_A01563_0260_BHTHVJDRX5_AAGACACC-TCGGTTAC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F28-1_250130_A01563_0260_BHTHVJDRX5_AAGACACC-TCGGTTAC_L002_R2_001.fastq.gz
-        Cl_05A11_NT:
-            lane1:
-                - ../../seqdata/3919F29-1_250130_A01563_0260_BHTHVJDRX5_CAACTCCA-ACGGATTC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F29-1_250130_A01563_0260_BHTHVJDRX5_CAACTCCA-ACGGATTC_L002_R2_001.fastq.gz
-        Cl_05A11_dTAG:
-            lane1:
-                - ../../seqdata/3919F30-1_250130_A01563_0260_BHTHVJDRX5_GATCTTGC-TGCTCATG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F30-1_250130_A01563_0260_BHTHVJDRX5_GATCTTGC-TGCTCATG_L002_R2_001.fastq.gz
-        Cl_11H12_NT:
-            lane1:
-                - ../../seqdata/3919F31-1_250130_A01563_0260_BHTHVJDRX5_CTTCACTG-GTCCTAAG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F31-1_250130_A01563_0260_BHTHVJDRX5_CTTCACTG-GTCCTAAG_L002_R2_001.fastq.gz
-        Cl_11H12_dTAG:
-            lane1:
-                - ../../seqdata/3919F32-1_250130_A01563_0260_BHTHVJDRX5_CTCGACTT-GGTCAGAT_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F32-1_250130_A01563_0260_BHTHVJDRX5_CTCGACTT-GGTCAGAT_L002_R2_001.fastq.gz
-        Cl_01E9_NT:
-            lane1:
-                - ../../seqdata/3919F33-1_250130_A01563_0260_BHTHVJDRX5_GTACACCT-CATGAGGA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F33-1_250130_A01563_0260_BHTHVJDRX5_GTACACCT-CATGAGGA_L002_R2_001.fastq.gz
-        Cl_01E9_dTAG:
-            lane1:
-                - ../../seqdata/3919F34-1_250130_A01563_0260_BHTHVJDRX5_CCAAGGTT-GCTATCCT_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F34-1_250130_A01563_0260_BHTHVJDRX5_CCAAGGTT-GCTATCCT_L002_R2_001.fastq.gz
-        Cl_02D01_NT:
-            lane1:
-                - ../../seqdata/3919F35-1_250130_A01563_0260_BHTHVJDRX5_GAACGGTT-ATTCCTCC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F35-1_250130_A01563_0260_BHTHVJDRX5_GAACGGTT-ATTCCTCC_L002_R2_001.fastq.gz
-        Cl_02D01_dTAG:
-            lane1:
-                - ../../seqdata/3919F36-1_250130_A01563_0260_BHTHVJDRX5_CCAGTTGA-ATGACGTC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F36-1_250130_A01563_0260_BHTHVJDRX5_CCAGTTGA-ATGACGTC_L002_R2_001.fastq.gz
-        Cl_05D02_NT:
-            lane1:
-                - ../../seqdata/3919F37-1_250130_A01563_0260_BHTHVJDRX5_GTCATCGT-TTAAGCGG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F37-1_250130_A01563_0260_BHTHVJDRX5_GTCATCGT-TTAAGCGG_L002_R2_001.fastq.gz
-        Cl_05D02_dTAG:
-            lane1:
-                - ../../seqdata/3919F38-1_250130_A01563_0260_BHTHVJDRX5_CAATGCGA-AGTTCGTC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F38-1_250130_A01563_0260_BHTHVJDRX5_CAATGCGA-AGTTCGTC_L002_R2_001.fastq.gz
-        Cl_12G10_NT:
-            lane1:
-                - ../../seqdata/3919F39-1_250130_A01563_0260_BHTHVJDRX5_GGTTGAAC-AACGTGGA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F39-1_250130_A01563_0260_BHTHVJDRX5_GGTTGAAC-AACGTGGA_L002_R2_001.fastq.gz
-        Cl_12G10_dTAG:
-            lane1:
-                - ../../seqdata/3919F40-1_250130_A01563_0260_BHTHVJDRX5_CTTCGGTT-CTCTGGTT_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F40-1_250130_A01563_0260_BHTHVJDRX5_CTTCGGTT-CTCTGGTT_L002_R2_001.fastq.gz
-        Cl_01F3_NT:
-            lane1:
-                - ../../seqdata/3919F41-1_250130_A01563_0260_BHTHVJDRX5_CGGCATTA-TGACTGAC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F41-1_250130_A01563_0260_BHTHVJDRX5_CGGCATTA-TGACTGAC_L002_R2_001.fastq.gz
-        Cl_01F3_dTAG:
-            lane1:
-                - ../../seqdata/3919F42-1_250130_A01563_0260_BHTHVJDRX5_CACGCAAT-ATGGAAGG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F42-1_250130_A01563_0260_BHTHVJDRX5_CACGCAAT-ATGGAAGG_L002_R2_001.fastq.gz
-        Cl_02D07_NT:
-            lane1:
-                - ../../seqdata/3919F43-1_250130_A01563_0260_BHTHVJDRX5_GGAATGTC-GTGTTCCT_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F43-1_250130_A01563_0260_BHTHVJDRX5_GGAATGTC-GTGTTCCT_L002_R2_001.fastq.gz
-        Cl_02D07_dTAG:
-            lane1:
-                - ../../seqdata/3919F44-1_250130_A01563_0260_BHTHVJDRX5_TGGTGAAG-GCTGTAAG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F44-1_250130_A01563_0260_BHTHVJDRX5_TGGTGAAG-GCTGTAAG_L002_R2_001.fastq.gz
-        Cl_10G02_NT:
-            lane1:
-                - ../../seqdata/3919F45-1_250130_A01563_0260_BHTHVJDRX5_GGACATCA-TGCAGGTA_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F45-1_250130_A01563_0260_BHTHVJDRX5_GGACATCA-TGCAGGTA_L002_R2_001.fastq.gz
-        Cl_10H02_dTAG:
-            lane1:
-                - ../../seqdata/3919F46-1_250130_A01563_0260_BHTHVJDRX5_GGTGTACA-TAGCGTCT_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F46-1_250130_A01563_0260_BHTHVJDRX5_GGTGTACA-TAGCGTCT_L002_R2_001.fastq.gz
-        Cl_13A03_NT:
-            lane1:
-                - ../../seqdata/3919F47-1_250130_A01563_0260_BHTHVJDRX5_GATAGCCA-CTGTGTTG_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F47-1_250130_A01563_0260_BHTHVJDRX5_GATAGCCA-CTGTGTTG_L002_R2_001.fastq.gz
-        Cl_13A03_dTAG:
-            lane1:
-                - ../../seqdata/3919F48-1_250130_A01563_0260_BHTHVJDRX5_CCACAACA-TGTGGTAC_L002_R1_001.fastq.gz
-                - ../../seqdata/3919F48-1_250130_A01563_0260_BHTHVJDRX5_CCACAACA-TGTGGTAC_L002_R2_001.fastq.gz
+                - test/fastq/MATa_R2/lane1/SRR2601851_1.fastq.gz
+                - test/fastq/MATa_R2/lane1/SRR2601851_2.fastq.gz
+
     library_groups:
-        dTAG:
-            - Cl_01A03_dTAG
-            - Cl_01F12_dTAG
-            - Cl_03A11_dTAG
-            - Cl_10H07_dTAG
-            - Cl_01B1_dTAG
-            - Cl_01H07_dTAG
-            - Cl_03G04_dTAG
-            - Cl_11A07_dTAG
-            - Cl_01B11_dTAG
-            - Cl_02A11_dTAG
-            - Cl_04D01_dTAG
-            - Cl_11G10_dTAG
-            - Cl_01C7_dTAG
-            - Cl_02C12_dTAG
-            - Cl_05A11_dTAG
-            - Cl_11H12_dTAG
-            - Cl_01E9_dTAG
-            - Cl_02D01_dTAG
-            - Cl_05D02_dTAG
-            - Cl_12G10_dTAG
-            - Cl_01F3_dTAG
-            - Cl_02D07_dTAG
-            - Cl_10H02_dTAG
-            - Cl_13A03_dTAG
-        DMSO:
-            - Cl_01A03_NT
-            - Cl_01F12_NT
-            - Cl_03A11_NT
-            - Cl_10H07_NT
-            - Cl_01B1_NT
-            - Cl_01H07_NT
-            - Cl_03G04_NT
-            - Cl_11A07_NT
-            - Cl_01B11_NT
-            - Cl_02A11_NT
-            - Cl_04D01_NT
-            - Cl_11G10_NT
-            - Cl_01C7_NT
-            - Cl_02C12_NT
-            - Cl_05A11_NT
-            - Cl_11H12_NT
-            - Cl_01E9_NT
-            - Cl_02D01_NT
-            - Cl_05D02_NT
-            - Cl_12G10_NT
-            - Cl_01F3_NT
-            - Cl_02D07_NT
-            - Cl_10G02_NT
-            - Cl_13A03_NT
-
-
+        MATalpha:
+            - MATalpha_R1
+            - MATalpha_R2
+        MATa:
+            - MATa_R1
+            - MATa_R2
+        all:
+            - MATa_R1
+            - MATa_R2
+            - MATalpha_R1
+            - MATalpha_R2
     truncate_fastq_reads: 0
 
     genome:
-        assembly_name: 'mm10_custom_GT'
-        bwa_index_wildcard_path: '../../4Clike/refgen/mm10_custom.fa*'
-        chrom_sizes_path: '../../4Clike/refgen/mm10_custom_chromsizes.txt'
+        assembly_name: 'sacCer3'
+        bwa_index_wildcard_path: 'test/genome/sacCer3.fa.gz*'
+        chrom_sizes_path: 'test/genome/sacCer3.chrom.sizes'
+
 
 do_fastqc: False
 
