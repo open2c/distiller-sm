@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 import pandas as pd
 import shlex
 
+
 include: "rules/common.smk"
 
 
@@ -49,6 +50,20 @@ if config.get("do_fastqc", False):
             run=LIBRARY_RUN_FASTQS[library].keys(),
             side=[1, 2],
         )
+
+# Require bams if we are keeping them
+# Simplifies rerunning the pipeline when changing this option
+bams = []
+if config["parse"]["keep_unparsed_bams"]:
+    for library in LIBRARY_RUN_FASTQS:
+        for run in LIBRARY_RUN_FASTQS[library].keys():
+            chunk_ids = glob_wildcards(
+                f"{processed_fastqs_folder}/{library}/{run}/1.{{chunk_id}}.fastq.gz"
+            ).chunk_id
+            bams += expand(
+                f"{mapped_parsed_sorted_chunks_folder}/{library}/{run}/{{chunk_id}}.{assembly}.bam",
+                chunk_id=chunk_ids,
+            )
 
 # Setting up scaling from pairs outputs if required
 library_scaling_pairs = []
@@ -114,31 +129,38 @@ resgen_uploads = (
 
 # Some sanity checks
 # Phasing
-if config.get('phase', {}).get('do_phase', False):
-    if config['map']['mapper']=='chromap':
+if config.get("phase", {}).get("do_phase", False):
+    if config["map"]["mapper"] == "chromap":
         raise ValueError(
             "Phasing is not possible with chromap, please use bwa-mem, bwa-mem2 or bwa-meme."
         )
-    parse_options = argstring_to_dict(config['parse'].get('parsing_options', ''))
-    if '--min-mapq' not in parse_options or parse_options['--min-mapq'] != '0':
+    parse_options = argstring_to_dict(config["parse"].get("parsing_options", ""))
+    if "--min-mapq" not in parse_options or parse_options["--min-mapq"] != "0":
         raise ValueError(
             "Plase set '--min-mapq to 0' in the parsing options to use phasing."
         )
-    if '--add-columns' not in parse_options:
+    if "--add-columns" not in parse_options:
         raise ValueError(
             "Please set the appropriate --add-columns argument in the parsing options to use phasing."
         )
-    elif config['phase']['tag_mode']=='XA' and not set(['XA', 'NM', 'AS', 'XS', 'mapq']).issubset(set(parse_options['--add-columns'].split(','))):
+    elif config["phase"]["tag_mode"] == "XA" and not set(
+        ["XA", "NM", "AS", "XS", "mapq"]
+    ).issubset(set(parse_options["--add-columns"].split(","))):
         raise ValueError(
             "Please set '--add-columns XA,NM,AS,XS,mapq' in the parsing options to use phasing with XA tag mode."
         )
-    elif config['phase']['tag_mode']=='XB' and not set(['XB', 'NM', 'AS', 'XS', 'mapq']).issubset(set(parse_options['--add-columns'].split(','))):
+    elif config["phase"]["tag_mode"] == "XB" and not set(
+        ["XB", "NM", "AS", "XS", "mapq"]
+    ).issubset(set(parse_options["--add-columns"].split(","))):
         raise ValueError(
             "Please set '--add-columns XB,NM,AS,XS,mapq' in the parsing options to use phasing with XB tag mode."
         )
     # simpler check, should be enough and in case of multiple extra col pairs, where the dict would only record the last one...
-    dedup_options = config["dedup"].get("dedup_options", "") 
-    if '--extra-col-pair phase1 phase1' not in dedup_options or '--extra-col-pair phase2 phase2' not in dedup_options:
+    dedup_options = config["dedup"].get("dedup_options", "")
+    if (
+        "--extra-col-pair phase1 phase1" not in dedup_options
+        or "--extra-col-pair phase2 phase2" not in dedup_options
+    ):
         raise ValueError(
             "Please add '--extra-col-pair phase1 phase2' in the dedup options to use phasing."
         )
@@ -159,6 +181,7 @@ rule default:
         fastqc,
         multiqc,
         resgen_uploads,
+        bams,
 
 
 # Global constraints on the wildcards to be used in the workflow - ensures correct
@@ -442,12 +465,11 @@ rule trim:
 # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
 # Perhaps something with tee might be faster, had trouble getting it to work
 if config["parse"]["keep_unparsed_bams"]:
-
-    ruleorder: map_chunks_bwa > map_chunks_bwa_pipe
-
+    output_bam = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
 else:
-
-    ruleorder: map_chunks_bwa_pipe > map_chunks_bwa
+    output_bam = pipe(
+        f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
+    )
 
 
 rule map_chunks_bwa:
@@ -472,25 +494,18 @@ rule map_chunks_bwa:
         dedup="none",
     threads: 4
     output:
-        f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
+        bam=output_bam,
     log:
         "logs/bwa_memx/{library}.{run}.{chunk_id}.log",
     benchmark:
         "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.tsv"
     wrapper:
-        "v4.6.0/bio/bwa-memx/mem"
-
-
-use rule map_chunks_bwa as map_chunks_bwa_pipe with:
-    output:
-        pipe(
-            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam"
-        ),
+        "v2.2.1/bio/bwa-memx/mem"
 
 
 rule parse_sort_chunks:
     input:
-        bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.bam",
+        bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam",
         chromsizes=chromsizes_path,
     threads: 4
     params:
@@ -555,7 +570,7 @@ rule map_chunks_chromap:
         chromap -e 4 -q 1 --split-alignment --pairs -x {input.idx} -r {input.reference} \
         -t {threads} {params.extra} \
         -1 {input.reads[0]} -2 {input.reads[1]} -o /dev/stdout 2>{log} | \
-        bgzip > {output} \
+        bgzip > {output}
         """
 
 
@@ -588,7 +603,7 @@ rule merge_runs:
         command=lambda wildcards, input, threads, output: (
             f"pairtools merge {input} --nproc {threads} -o {output}"
             if len(input) > 1
-            else f"cp {input} {output}"
+            else f"ln -sr {input} {output}"
         ),
     shell:
         r"""{params.command} \
@@ -677,14 +692,14 @@ rule merge_dedup:
         dedup_options=lambda wildcards: config["dedup"].get("dedup_options", ""),
         max_mismatch_bp=config["dedup"]["max_mismatch_bp"],
         merge_command=lambda wildcards, input, threads: (
-            f"pairtools merge {input} --nproc {threads} | "
+            f"pairtools merge {input} --nproc {threads} --keep-first-header | "
             if len(input) > 1
             else f"bgzip -dc -@ {threads-1} {input} | "
         ),
         phase_command=lambda wildcards, threads: (
             f'pairtools phase --tag-mode {config["phase"]["tag_mode"]} --phase-suffixes {" ".join(config["phase"]["suffixes"])} | pairtools sort --nproc {threads - 1} | '
             if config.get("phase", {}).get("do_phase", False)
-            else ''
+            else ""
         ),
     threads: 4
     conda:
@@ -696,7 +711,12 @@ rule merge_dedup:
     benchmark:
         "benchmarks/merge_dedup/{library}.tsv"
     shell:
-        r"{params.merge_command}" + r"{params.phase_command}" + dedup_command + " >{log[0]} 2>&1"
+        (
+            r"{params.merge_command}"
+            + r"{params.phase_command}"
+            + dedup_command
+            + " >{log[0]} 2>&1"
+        )
 
 
 # balance_args = "--balance" if {config["bin"].get("balance", True)} else ""
@@ -836,7 +856,6 @@ use rule mcool2hic_group as mcool2hic_library with:
 rule scaling_pairs_library:
     input:
         pairs=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.pairs.gz",
-        chromsizes=chromsizes_path,
     params:
         min_distance=config["scaling_pairs"]["min_distance"],
         max_distance=config["scaling_pairs"]["max_distance"],
@@ -938,7 +957,7 @@ rule resgen_upload_library_group:
     shell:
         r"""resgen sync datasets '{params.user}' '{params.project}' {input.mcool} \
         --tag filetype:cooler --tag assembly:{params.assembly} --tag datatype:matrix \
-        --force-update true \
+        --force-update 'true' \
         >{log[0]} 2>&1
         """
 

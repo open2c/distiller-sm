@@ -70,10 +70,10 @@ do_fastqc: False
 
 # Control how reads are mapped to the reference genomes.
 map:
-    mapper: 'bwa-mem2' #available: 'bwa-mem', 'bwa-mem2', 'bwa-meme', 'chromap'
+    mapper: 'bwa-mem' #available: 'bwa-mem', 'bwa-mem2', 'bwa-meme', 'chromap'
     # If using 'chromap', all parsing parameters are ignored, since chromap
     # outputs .pairs files directly.
-    # In addition, chromap saves a minimal .pairs file with only the strictly requires
+    # In addition, chromap saves a minimal .pairs file with only the strictly required
     # columns. It can not save mapq values, hence you have to remove the filter
     # that uses it - but you can set a custom minimum mapq value for the mapping
     # itself with -q extra argument to chromap.
@@ -221,7 +221,7 @@ bin:
     # Filters are specified using the following syntax:
     # {filter_name}: '{a valid Python expression}'
     filters:
-        # no_filter: ''
+        no_filter: ''
         # comment out the following when using chromap:
         mapq_30: '(mapq1>=30) and (mapq2>=30)'
     
