@@ -375,42 +375,6 @@ else:  # bwa-meme
         ".suffixarray_uint64_L2_PARAMETERS",
     )
 
-if config["map"]["mapper"] == "chromap":
-
-    ruleorder: map_chunks_chromap > parse_sort_chunks
-
-else:
-
-    ruleorder: parse_sort_chunks > map_chunks_chromap
-
-
-rule bwaindex:
-    input:
-        genome=genome_path,
-    output:
-        idx=idx,
-    params:
-        bwa=config["map"]["mapper"],
-    threads: 1  #Only affects bwa-meme
-    log:
-        f"logs/bwa-memx_index/{assembly}.log",
-    cache: True
-    wrapper:
-        "v4.6.0/bio/bwa-memx/index"
-
-
-rule chromap_index:
-    input:
-        genome=genome_path,
-    output:
-        idx=multiext(genome_path, ".chromap.index"),
-    log:
-        f"logs/chromap_index/{assembly}.log",
-    conda:
-        "envs/chromap.yml"
-    shell:
-        r"chromap -i -r {input.genome} -o {output.idx} >{log} 2>&1"
-
 
 # faidx doesn't work with gzipped files :( So test fails, but probably should work
 # with .fa, need to check
@@ -462,116 +426,147 @@ rule trim:
         "v4.6.0/bio/fastp"
 
 
+if config["map"]["mapper"] == "chromap":
+
+    rule chromap_index:
+        input:
+            genome=genome_path,
+        output:
+            idx=multiext(genome_path, ".chromap.index"),
+        log:
+            f"logs/chromap_index/{assembly}.log",
+        conda:
+            "envs/chromap.yml"
+        shell:
+            r"chromap -i -r {input.genome} -o {output.idx} >{log} 2>&1"
+
+    rule map_chunks_chromap:
+        input:
+            reads=lambda wildcards: (
+                [
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
+                ]
+                if config["map"]["trim_options"]
+                else [
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
+                ]
+            ),
+            reference=genome_path,
+            idx=multiext(genome_path, ".chromap.index"),
+        params:
+            extra=config["map"].get("mapping_options", ""),
+        threads: 8
+        output:
+            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.pairs.gz",
+        log:
+            "logs/chromap/{library}.{run}.{chunk_id}.log",
+        benchmark:
+            "benchmarks/chromap/{library}.{run}.{chunk_id}.tsv"
+        conda:
+            "envs/chromap.yml"
+        shell:
+            # chromap doesn't output gzip files, so we need to pipe it to bgzip
+            # It doesn't work with low memory mode, so we can't use the hic preset
+            # Hence I provide all arguments manually except for --low-mem
+            r"""
+            chromap -e 4 -q 1 --split-alignment --pairs -x {input.idx} -r {input.reference} \
+            -t {threads} {params.extra} \
+            -1 {input.reads[0]} -2 {input.reads[1]} -o /dev/stdout 2>{log} | \
+            bgzip > {output}
+            """
+
+else:
+
+    rule bwaindex:
+        input:
+            genome=genome_path,
+        output:
+            idx=idx,
+        params:
+            bwa=config["map"]["mapper"],
+        threads: 1  #Only affects bwa-meme
+        log:
+            f"logs/bwa-memx_index/{assembly}.log",
+        cache: True
+        wrapper:
+            "v4.6.0/bio/bwa-memx/index"
+
+    if config["parse"]["keep_unparsed_bams"]:
+        output_bam = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
+    else:
+        output_bam = pipe(
+            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
+        )
+
+    rule map_chunks_bwa:
+        input:
+            reads=lambda wildcards: (
+                [
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
+                ]
+                if config["map"]["trim_options"]
+                else [
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
+                ]
+            ),
+            reference=genome_path,
+            idx=idx,
+        params:
+            bwa=config["map"]["mapper"],
+            extra="-SP",
+            sort="none",
+            dedup="none",
+        threads: 4
+        output:
+            bam=output_bam,
+        log:
+            "logs/bwa_memx/{library}.{run}.{chunk_id}.log",
+        benchmark:
+            "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.tsv"
+        wrapper:
+            "v2.2.1/bio/bwa-memx/mem"
+
+    rule parse_sort_chunks:
+        input:
+            bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam",
+            chromsizes=chromsizes_path,
+        threads: 4
+        params:
+            # keep_bams_command=f"| tee >(samtools view -bS > {mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam)"
+            # if config["parse"]["keep_unparsed_bams"]
+            # else "",
+            dropsam_flag=(
+                "" if config["parse"].get("make_pairsam", False) else "--drop-sam"
+            ),
+            dropreadid_flag=(
+                "--drop-readid" if config["parse"].get("drop_readid", False) else ""
+            ),
+            dropseq_flag="--drop-seq" if config["parse"].get("drop_seq", True) else "",
+            parsing_options=config["parse"].get("parsing_options", ""),
+        conda:
+            "envs/pairtools_cooler.yml"
+        output:
+            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.pairs.gz",
+        benchmark:
+            "benchmarks/parse_sort_chunks/{library}.{run}.{chunk_id}.tsv"
+        log:
+            "logs/parse_sort_chunks/{library}.{run}.{chunk_id}.log",
+        shell:
+            r"""
+            pairtools parse {params.dropsam_flag} {params.dropreadid_flag} {params.dropseq_flag} \
+            {params.parsing_options} \
+            -c {input.chromsizes} {input.bam} \
+            | pairtools sort --nproc {threads} -o {output} \
+            >{log[0]} 2>&1
+            """
+
+
 # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
 # Perhaps something with tee might be faster, had trouble getting it to work
-if config["parse"]["keep_unparsed_bams"]:
-    output_bam = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
-else:
-    output_bam = pipe(
-        f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
-    )
-
-
-rule map_chunks_bwa:
-    input:
-        reads=lambda wildcards: (
-            [
-                f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
-                f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
-            ]
-            if config["map"]["trim_options"]
-            else [
-                f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
-                f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
-            ]
-        ),
-        reference=genome_path,
-        idx=idx,
-    params:
-        bwa=config["map"]["mapper"],
-        extra="-SP",
-        sort="none",
-        dedup="none",
-    threads: 4
-    output:
-        bam=output_bam,
-    log:
-        "logs/bwa_memx/{library}.{run}.{chunk_id}.log",
-    benchmark:
-        "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.tsv"
-    wrapper:
-        "v2.2.1/bio/bwa-memx/mem"
-
-
-rule parse_sort_chunks:
-    input:
-        bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam",
-        chromsizes=chromsizes_path,
-    threads: 4
-    params:
-        # keep_bams_command=f"| tee >(samtools view -bS > {mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam)"
-        # if config["parse"]["keep_unparsed_bams"]
-        # else "",
-        dropsam_flag="" if config["parse"].get("make_pairsam", False) else "--drop-sam",
-        dropreadid_flag=(
-            "--drop-readid" if config["parse"].get("drop_readid", False) else ""
-        ),
-        dropseq_flag="--drop-seq" if config["parse"].get("drop_seq", True) else "",
-        parsing_options=config["parse"].get("parsing_options", ""),
-    conda:
-        "envs/pairtools_cooler.yml"
-    output:
-        f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.pairs.gz",
-    benchmark:
-        "benchmarks/parse_sort_chunks/{library}.{run}.{chunk_id}.tsv"
-    log:
-        "logs/parse_sort_chunks/{library}.{run}.{chunk_id}.log",
-    shell:
-        r"""
-        pairtools parse {params.dropsam_flag} {params.dropreadid_flag} {params.dropseq_flag} \
-        {params.parsing_options} \
-        -c {input.chromsizes} {input.bam} \
-        | pairtools sort --nproc {threads} -o {output} \
-        >{log[0]} 2>&1
-        """
-
-
-rule map_chunks_chromap:
-    input:
-        reads=lambda wildcards: (
-            [
-                f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
-                f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
-            ]
-            if config["map"]["trim_options"]
-            else [
-                f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
-                f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
-            ]
-        ),
-        reference=genome_path,
-        idx=multiext(genome_path, ".chromap.index"),
-    params:
-        extra=config["map"].get("mapping_options", ""),
-    threads: 8
-    output:
-        f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.pairs.gz",
-    log:
-        "logs/chromap/{library}.{run}.{chunk_id}.log",
-    benchmark:
-        "benchmarks/chromap/{library}.{run}.{chunk_id}.tsv"
-    conda:
-        "envs/chromap.yml"
-    shell:
-        # chromap doesn't output gzip files, so we need to pipe it to bgzip
-        # It doesn't work with low memory mode, so we can't use the hic preset
-        # Hence I provide all arguments manually except for --low-mem
-        r"""
-        chromap -e 4 -q 1 --split-alignment --pairs -x {input.idx} -r {input.reference} \
-        -t {threads} {params.extra} \
-        -1 {input.reads[0]} -2 {input.reads[1]} -o /dev/stdout 2>{log} | \
-        bgzip > {output}
-        """
 
 
 # Find out the chunk ids for each library and run - since we don't know them beforehand
@@ -717,12 +712,6 @@ rule merge_dedup:
             + dedup_command
             + " >{log[0]} 2>&1"
         )
-
-
-# balance_args = "--balance" if {config["bin"].get("balance", True)} else ""
-# balance_options = config["bin"].get("balance_options", "")
-# if balance_args and balance_options:
-#     balance_args = f"{balance_args} {balance_options}"
 
 
 rule bin_pairs_library:
