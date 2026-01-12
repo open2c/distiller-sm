@@ -72,7 +72,7 @@ do_fastqc: False
 map:
     mapper: 'bwa-mem' #available: 'bwa-mem', 'bwa-mem2', 'bwa-meme', 'chromap'
     # If using 'chromap', all parsing parameters are ignored, since chromap
-    # outputs .pairs files directly.
+    # outputs deduplicated .pairs files directly.
     # In addition, chromap saves a minimal .pairs file with only the strictly required
     # columns. It can not save mapq values, hence you have to remove the filter
     # that uses it - but you can set a custom minimum mapq value for the mapping
