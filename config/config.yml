@@ -244,6 +244,6 @@ output:
 # To use automatic upload to resgen, add your credentials to  ~/.resgen/credentials
 # (see https://docs-python.resgen.io/cli.html#logging-in)
 resgen:
-    upload: True
-    user: ilya
-    project: GTVM_microC
+    upload: False
+    user: username_here
+    project: project_name_here
