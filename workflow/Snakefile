@@ -499,6 +499,8 @@ else:
         output_bam = pipe(
             f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
         )
+        # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
+        # Perhaps something with tee might be faster, had trouble getting it to work
 
     rule map_chunks_bwa:
         input:
@@ -563,10 +565,6 @@ else:
             | pairtools sort --nproc {threads} -o {output} \
             >{log[0]} 2>&1
             """
-
-
-# If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
-# Perhaps something with tee might be faster, had trouble getting it to work
 
 
 # Find out the chunk ids for each library and run - since we don't know them beforehand
@@ -725,6 +723,7 @@ rule bin_pairs_library:
             else ""
         ),
         assembly=assembly,
+        bgzip_threads=lambda wildcards, threads: max(1, (threads - 1)),
     threads: 4
     conda:
         "envs/pairtools_cooler.yml"
@@ -736,7 +735,7 @@ rule bin_pairs_library:
         "benchmarks/bin_pairs_library/{library}.{filter_name}.{min_resolution}.tsv"
     shell:
         r"""
-        bgzip -dc -@ {threads} {input.pairs} {params.filter_command} | cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 \
+        bgzip -dc -@ {params.bgzip_threads} {input.pairs} {params.filter_command} | cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 \
         --assembly {params.assembly} \
         {input.chromsizes}:{wildcards.min_resolution} - {output.cool} >{log[0]} 2>&1
         """
