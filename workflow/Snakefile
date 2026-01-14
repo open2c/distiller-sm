@@ -432,7 +432,7 @@ if config["map"]["mapper"] == "chromap":
         input:
             genome=genome_path,
         output:
-            idx=multiext(genome_path, ".chromap.index"),
+            idx=genome_path + ".chromap.index",
         log:
             f"logs/chromap_index/{assembly}.log",
         conda:
@@ -454,7 +454,7 @@ if config["map"]["mapper"] == "chromap":
                 ]
             ),
             reference=genome_path,
-            idx=multiext(genome_path, ".chromap.index"),
+            idx=genome_path + ".chromap.index",
         params:
             extra=config["map"].get("mapping_options", ""),
         threads: 8
@@ -471,10 +471,10 @@ if config["map"]["mapper"] == "chromap":
             # It doesn't work with low memory mode, so we can't use the hic preset
             # Hence I provide all arguments manually except for --low-mem
             r"""
-            chromap -e 4 -q 1 --split-alignment --pairs -x {input.idx} -r {input.reference} \
-            -t {threads} {params.extra} \
-            -1 {input.reads[0]} -2 {input.reads[1]} -o /dev/stdout 2>{log} | \
-            bgzip > {output}
+            chromap -e 4 -q 1 --split-alignment --pairs -x {input.idx} \
+            -r {input.reference} -t {threads} {params.extra} \
+            -1 {input.reads[0]} -2 {input.reads[1]} \
+            -o /dev/stdout 2>{log} | bgzip > {output}
             """
 
 else:
@@ -493,12 +493,9 @@ else:
         wrapper:
             "v4.6.0/bio/bwa-memx/index"
 
-    if config["parse"]["keep_unparsed_bams"]:
-        output_bam = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
-    else:
-        output_bam = pipe(
-            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
-        )
+    output_bam = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
+    if not config["parse"]["keep_unparsed_bams"]:
+        output_bam = pipe(output_bam)
         # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
         # Perhaps something with tee might be faster, had trouble getting it to work
 
