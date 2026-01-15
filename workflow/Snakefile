@@ -468,7 +468,9 @@ if config["map"]["mapper"] == "chromap":
             "envs/chromap.yml"
         shell:
             # chromap doesn't output gzip files, so we need to pipe it to bgzip
-            # It doesn't work with low memory mode, so we can't use the hic preset
+            # For some reason it doesn't work with low memory mode in combination with
+            # snakemake, so we can't use the hic preset... Might cause a problem with
+            # memory for large dataset!
             # Hence I provide all arguments manually except for --low-mem
             r"""
             chromap -e 4 -q 1 --split-alignment --pairs -x {input.idx} \
@@ -493,11 +495,11 @@ else:
         wrapper:
             "v4.6.0/bio/bwa-memx/index"
 
+    # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
+    # Perhaps something with tee might be faster, had trouble getting it to work
     output_bam = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
     if not config["parse"]["keep_unparsed_bams"]:
         output_bam = pipe(output_bam)
-        # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
-        # Perhaps something with tee might be faster, had trouble getting it to work
 
     rule map_chunks_bwa:
         input:
