@@ -845,11 +845,10 @@ rule scaling_pairs_library:
         chromsizes=chromsizes_path,
     params:
         min_distance=config["scaling_pairs"].get("min_distance", 0),
-        max_distance=lambda wildcards, input: config["scaling_pairs"].get(
-            "max_distance",
-            pd.read_table(input.chromsizes, header=None, names=["chrom", "size"])[
-                "size"
-            ].max(),
+        max_distance=lambda wildcards, input: (
+            config["scaling_pairs"]["max_distance"]
+            if config["scaling_pairs"].get("max_distance")
+            else pd.read_table(input.chromsizes, header=None, names=["chrom", "size"])["size"].max()
         ),
         n_dist_bins_decade=config["scaling_pairs"].get("n_dist_bins_decade", 10),
         extra=config["scaling_pairs"].get("scaling_options", ""),
