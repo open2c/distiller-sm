@@ -1,0 +1,6 @@
+name: chromsize_env
+channels:
+  - bioconda
+  - nodefaults
+dependencies:
+  - chromsize

@@ -32,7 +32,9 @@ multiqc_folder = config["output"]["dirs"]["multiqc"]
 assembly = config["input"]["genome"]["assembly_name"]
 genome_path = config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*")
 # custom_genome_folder = Path(config["genome"]["custom_genome_path"]).parent
-chromsizes_path = config["input"]["genome"]["chrom_sizes_path"]
+chromsizes_path = config["input"]["genome"].get(
+    "chrom_sizes_path", f"{genome_path}.chromsizes"
+)
 
 
 LIBRARY_RUN_FASTQS = organize_fastqs(config)
@@ -391,13 +393,16 @@ else:  # bwa-meme
 #         "v4.6.0/bio/samtools/faidx"
 
 
-# rule make_chromsizes:
-#     input:
-#         genome_faidx=f"{config['input']['genome']['genome_fasta_path']}.fai",
-#     output:
-#         chromsizes=chromsizes_path,
-#     shell:
-#         "cut -f1,2 {input.genome_faidx} > {output.chromsizes}"
+rule make_chromsizes:
+    input:
+        genome_faidx=f"{config['input']['genome']['genome_fasta_path']}.fai",
+    output:
+        chromsizes=chromsizes_path,
+    threads: 1
+    conda:
+        "envs/chromsize.yml"
+    shell:
+        "chromsize --sequence {input.genome_faidx} --output {output.chromsizes} -t {threads}"
 
 
 rule trim:
