@@ -36,7 +36,6 @@ chromsizes_path = config["input"]["genome"].get(
     "chrom_sizes_path", f"{genome_path}.chromsizes"
 )
 
-
 LIBRARY_RUN_FASTQS = organize_fastqs(config)
 runs = [list(LIBRARY_RUN_FASTQS[lib].keys()) for lib in LIBRARY_RUN_FASTQS.keys()]
 runs = [item for sublist in runs for item in sublist]
@@ -74,11 +73,6 @@ if "scaling_pairs" in config and config["scaling_pairs"].get("do", True):
         f"{pairs_library_folder}/{{library}}.{assembly}.nodups.scaling.tsv",
         library=LIBRARY_RUN_FASTQS.keys(),
     )
-    if not config["scaling_pairs"].get("max_distance", False):
-        chromsizes = pd.read_table(
-            chromsizes_path, header=None, names=["chrom", "size"]
-        )
-        config["scaling_pairs"]["max_distance"] = chromsizes["size"].max()
 
 # Setting up the library cooler outputs
 library_coolers = expand(
@@ -395,14 +389,14 @@ else:  # bwa-meme
 
 rule make_chromsizes:
     input:
-        genome_faidx=f"{config['input']['genome']['genome_fasta_path']}.fai",
+        genome_fasta=config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*"),
     output:
         chromsizes=chromsizes_path,
     threads: 1
     conda:
         "envs/chromsize.yml"
     shell:
-        "chromsize --sequence {input.genome_faidx} --output {output.chromsizes} -t {threads}"
+        "chromsize --input {input.genome_fasta} --output {output.chromsizes} -t {threads}"
 
 
 rule trim:
@@ -848,11 +842,17 @@ use rule mcool2hic_group as mcool2hic_library with:
 rule scaling_pairs_library:
     input:
         pairs=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.pairs.gz",
+        chromsizes=chromsizes_path,
     params:
-        min_distance=config["scaling_pairs"]["min_distance"],
-        max_distance=config["scaling_pairs"]["max_distance"],
-        n_dist_bins_decade=config["scaling_pairs"]["n_dist_bins_decade"],
-        extra=config["scaling_pairs"]["scaling_options"],
+        min_distance=config["scaling_pairs"].get("min_distance", 0),
+        max_distance=lambda wildcards, input: config["scaling_pairs"].get(
+            "max_distance",
+            pd.read_table(input.chromsizes, header=None, names=["chrom", "size"])[
+                "size"
+            ].max(),
+        ),
+        n_dist_bins_decade=config["scaling_pairs"].get("n_dist_bins_decade", 10),
+        extra=config["scaling_pairs"].get("scaling_options", ""),
     threads: 4
     conda:
         "envs/pairtools_cooler.yml"
