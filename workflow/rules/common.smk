@@ -62,6 +62,36 @@ def parse_fastq_folder(root_folder_path):
     return library_run_fastqs
 
 
+def has_custom_view(config, library):
+    """Check if a library has a custom genomic view defined."""
+    return library in config.get("input", {}).get("genomic_views", {})
+
+
+def get_view_path(config, library):
+    """Return the genomic view file path for a library, or None."""
+    return config.get("input", {}).get("genomic_views", {}).get(library, None)
+
+
+def get_view_genome_folder(config):
+    """Return the folder where rearranged genomes are stored."""
+    return config["output"]["dirs"].get("view_genomes", "results/view_genomes")
+
+
+def get_genome_path_for_library(config, library, assembly, default_genome_path):
+    """Return the genome FASTA path for a library (rearranged or default)."""
+    if has_custom_view(config, library):
+        view_genomes_folder = get_view_genome_folder(config)
+        return f"{view_genomes_folder}/{library}.{assembly}.fa"
+    return default_genome_path
+
+
+def get_chromsizes_for_library(config, library, assembly, default_chromsizes_path):
+    """Return the chromsizes path for a library (rearranged or default)."""
+    if has_custom_view(config, library):
+        view_genomes_folder = get_view_genome_folder(config)
+        return f"{view_genomes_folder}/{library}.{assembly}.chromsizes"
+    return default_chromsizes_path
+
 def check_fastq_dict_structure(library_run_fastqs):
     for library, run_dict in library_run_fastqs.items():
         if not isinstance(run_dict, dict):
