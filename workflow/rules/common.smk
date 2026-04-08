@@ -3,16 +3,17 @@ import os, pathlib
 import numpy as np
 import shlex
 
+
 def argstring_to_dict(argstring):
     """
     Convert a command line argument string into a dictionary.
-    
+
     Args:
         argstring (str): The command line argument string.
-        
+
     Returns:
         dict: A dictionary with argument names as keys and their values.
-        
+
     Note:
         - Arguments that start with '-' are considered keys.
         - If an argument has no value, it is set to True.
@@ -20,11 +21,14 @@ def argstring_to_dict(argstring):
         - If the final argument is a value without a preceding key, it will be included as a value for the last key (issue in case of specified input as last argument).
     """
     args = shlex.split(argstring)
-    keys = np.where([arg.startswith('-') for arg in args])[0]
-    vals = np.where([not arg.startswith('-') for arg in args])[0]
+    keys = np.where([arg.startswith("-") for arg in args])[0]
+    vals = np.where([not arg.startswith("-") for arg in args])[0]
     args_arrs = [arr for arr in np.split(args, keys) if arr.size > 0]
-    argdict = {str(arr[0]): (' '.join(arr[1:]) if arr.size > 1 else True) for arr in args_arrs }
+    argdict = {
+        str(arr[0]): (" ".join(arr[1:]) if arr.size > 1 else True) for arr in args_arrs
+    }
     return argdict
+
 
 def needs_downloading(fastq_files, side):
     if len(fastq_files) == 1 and fastq_files[0].startswith("sra:"):
@@ -91,6 +95,7 @@ def get_chromsizes_for_library(config, library, assembly, default_chromsizes_pat
         view_genomes_folder = get_view_genome_folder(config)
         return f"{view_genomes_folder}/{library}.{assembly}.chromsizes"
     return default_chromsizes_path
+
 
 def check_fastq_dict_structure(library_run_fastqs):
     for library, run_dict in library_run_fastqs.items():
