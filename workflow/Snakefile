@@ -28,6 +28,9 @@ coolers_library_group_folder = config["output"]["dirs"]["coolers_library_group"]
 stats_library_group_folder = config["output"]["dirs"]["stats_library_group"]
 
 multiqc_folder = config["output"]["dirs"]["multiqc"]
+view_genomes_folder = config["output"]["dirs"].get(
+    "view_genomes", "results/view_genomes"
+)
 
 assembly = config["input"]["genome"]["assembly_name"]
 genome_path = config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*")
@@ -35,6 +38,80 @@ genome_path = config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*")
 chromsizes_path = config["input"]["genome"].get(
     "chrom_sizes_path", f"{genome_path}.chromsizes"
 )
+
+# Per-library genomic views for genome rearrangement
+genomic_views = config.get("input", {}).get("genomic_views", {})
+keep_view_genomes = config.get("input", {}).get("keep_view_genomes", False)
+
+
+def get_library_assembly(library):
+    """Return the assembly name for a library: '{assembly}.{view_stem}' if it has a
+    genomic view, otherwise the base assembly name.
+    The view stem is derived from the view file name (without extension)."""
+    if library in genomic_views:
+        view_stem = Path(genomic_views[library]).stem
+        return f"{assembly}.{view_stem}"
+    return assembly
+
+
+def _maybe_temp(path):
+    """Wrap path with temp() unless keep_view_genomes is True."""
+    return path if keep_view_genomes else temp(path)
+
+
+def _get_bwa_index_extensions(mapper):
+    """Return the BWA index file extensions for the given mapper."""
+    if mapper == "bwa-mem":
+        return [".amb", ".ann", ".bwt", ".pac", ".sa"]
+    elif mapper == "bwa-mem2":
+        return [".0123", ".amb", ".ann", ".bwt.2bit.64", ".pac"]
+    else:  # bwa-meme
+        return [
+            ".0123",
+            ".amb",
+            ".ann",
+            ".pac",
+            ".pos_packed",
+            ".suffixarray_uint64",
+            ".suffixarray_uint64_L0_PARAMETERS",
+            ".suffixarray_uint64_L1_PARAMETERS",
+            ".suffixarray_uint64_L2_PARAMETERS",
+        ]
+
+
+def get_library_genome_path(wildcards):
+    """Return the genome FASTA path for the library in wildcards."""
+    library = wildcards.library
+    if library in genomic_views:
+        return f"{view_genomes_folder}/{library}.{assembly}.fa"
+    return genome_path
+
+
+def get_library_chromsizes(wildcards):
+    """Return the chromsizes path for the library in wildcards."""
+    library = wildcards.library
+    if library in genomic_views:
+        return f"{view_genomes_folder}/{library}.{assembly}.chromsizes"
+    return chromsizes_path
+
+
+def get_library_bwa_idx(wildcards):
+    """Return the BWA index files for the library in wildcards."""
+    library = wildcards.library
+    exts = _get_bwa_index_extensions(config["map"]["mapper"])
+    if library in genomic_views:
+        base = f"{view_genomes_folder}/{library}.{assembly}.fa"
+        return [base + ext for ext in exts]
+    return [genome_path + ext for ext in exts]
+
+
+def get_library_chromap_idx(wildcards):
+    """Return the chromap index file for the library in wildcards."""
+    library = wildcards.library
+    if library in genomic_views:
+        return f"{view_genomes_folder}/{library}.{assembly}.fa.chromap.index"
+    return genome_path + ".chromap.index"
+
 
 LIBRARY_RUN_FASTQS = organize_fastqs(config)
 runs = [list(LIBRARY_RUN_FASTQS[lib].keys()) for lib in LIBRARY_RUN_FASTQS.keys()]
@@ -57,58 +134,87 @@ if config.get("do_fastqc", False):
 bams = []
 if config["parse"]["keep_unparsed_bams"]:
     for library in LIBRARY_RUN_FASTQS:
+        lib_asm = get_library_assembly(library)
         for run in LIBRARY_RUN_FASTQS[library].keys():
             chunk_ids = glob_wildcards(
                 f"{processed_fastqs_folder}/{library}/{run}/1.{{chunk_id}}.fastq.gz"
             ).chunk_id
             bams += expand(
-                f"{mapped_parsed_sorted_chunks_folder}/{library}/{run}/{{chunk_id}}.{assembly}.bam",
+                f"{mapped_parsed_sorted_chunks_folder}/{library}/{run}/{{chunk_id}}.{lib_asm}.bam",
                 chunk_id=chunk_ids,
             )
 
 # Setting up scaling from pairs outputs if required
 library_scaling_pairs = []
 if "scaling_pairs" in config and config["scaling_pairs"].get("do", True):
-    library_scaling_pairs = expand(
-        f"{pairs_library_folder}/{{library}}.{assembly}.nodups.scaling.tsv",
-        library=LIBRARY_RUN_FASTQS.keys(),
-    )
+    for library in LIBRARY_RUN_FASTQS.keys():
+        lib_asm = get_library_assembly(library)
+        library_scaling_pairs.append(
+            f"{pairs_library_folder}/{library}.{lib_asm}.nodups.scaling.tsv"
+        )
 
 # Setting up the library cooler outputs
-library_coolers = expand(
-    f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
-    library=LIBRARY_RUN_FASTQS.keys(),
-    filter_name=list(config["bin"]["filters"].keys()),
-)
-library_hic = []
-if config["bin"].get("make_hic", False):
-    library_hic += expand(
-        f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{min_resolution}.hic",
-        library=LIBRARY_RUN_FASTQS.keys(),
+library_coolers = []
+for library in LIBRARY_RUN_FASTQS.keys():
+    lib_asm = get_library_assembly(library)
+    library_coolers += expand(
+        f"{coolers_library_folder}/{library}.{lib_asm}.{{filter_name}}.{min_resolution}.mcool",
         filter_name=list(config["bin"]["filters"].keys()),
     )
+library_hic = []
+if config["bin"].get("make_hic", False):
+    for library in LIBRARY_RUN_FASTQS.keys():
+        lib_asm = get_library_assembly(library)
+        library_hic += expand(
+            f"{coolers_library_folder}/{library}.{lib_asm}.{{filter_name}}.{min_resolution}.hic",
+            filter_name=list(config["bin"]["filters"].keys()),
+        )
 
 # Setting up the library group cooler and group stats outputs
 library_group_coolers = []
 library_group_hic = []
 library_group_stats = []
 # library_group_scaling_pairs = []
+
+
+def get_group_assembly(group_name):
+    """Return the assembly name for a library group (all members share the same one)."""
+    first_lib = config["input"]["library_groups"][group_name][0]
+    return get_library_assembly(first_lib)
+
+
 if "library_groups" in config["input"] and len(config["input"]["library_groups"]) > 0:
-    library_group_coolers = expand(
-        f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{min_resolution}.mcool",
-        library_group=config["input"]["library_groups"].keys(),
-        filter_name=list(config["bin"]["filters"].keys()),
-    )
-    if config["bin"].get("make_hic", False):
-        library_group_hic = expand(
-            f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{min_resolution}.hic",
-            library_group=config["input"]["library_groups"].keys(),
+    # Validate that all libraries in a group share the same assembly
+    for group_name, group_libs in config["input"]["library_groups"].items():
+        group_assemblies = set(get_library_assembly(lib) for lib in group_libs)
+        if len(group_assemblies) > 1:
+            libs_by_assembly = {}
+            for lib in group_libs:
+                libs_by_assembly.setdefault(get_library_assembly(lib), []).append(lib)
+            detail = "; ".join(
+                f"{asm}: {libs}" for asm, libs in libs_by_assembly.items()
+            )
+            raise ValueError(
+                f"Library group '{group_name}' mixes libraries with different reference "
+                f"genomes and cannot be merged. Found: {detail}. "
+                f"All libraries in a group must use the same genome (or the same "
+                f"genomic view)."
+            )
+
+    for group_name in config["input"]["library_groups"].keys():
+        grp_asm = get_group_assembly(group_name)
+        library_group_coolers += expand(
+            f"{coolers_library_group_folder}/{group_name}.{grp_asm}.{{filter_name}}.{min_resolution}.mcool",
             filter_name=list(config["bin"]["filters"].keys()),
         )
-    library_group_stats = expand(
-        f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
-        library_group=config["input"]["library_groups"].keys(),
-    )
+        if config["bin"].get("make_hic", False):
+            library_group_hic += expand(
+                f"{coolers_library_group_folder}/{group_name}.{grp_asm}.{{filter_name}}.{min_resolution}.hic",
+                filter_name=list(config["bin"]["filters"].keys()),
+            )
+        library_group_stats.append(
+            f"{stats_library_group_folder}/{group_name}.{grp_asm}.stats"
+        )
     # library_group_scaling_pairs = expand(
     #     f"{stats_library_group_folder}/{{library_group}}.{assembly}.scaling.tsv",
     #     library_group=config["input"]["library_groups"].keys(),
@@ -191,6 +297,7 @@ wildcard_constraints:
     ),
     run=f"({'|'.join([re.escape(run) for run in runs])})",
     chunk_id="[0-9]+",
+    assembly_name=f"({'|'.join(set([re.escape(get_library_assembly(lib)) for lib in LIBRARY_RUN_FASTQS.keys()]))})",
 
 
 # fasterq-dump just doesn't work for me on our server for some reason, but this code
@@ -270,13 +377,13 @@ if config["map"]["chunksize"] > 0:
         zcat {input.fastq2} | split -l {params.chunksize} -d \
             --filter 'bgzip -c -@ {threads} > $FILE.fastq.gz' - \
             {output}/2.
-        """
+        """ + " >{log} 2>&1"
 else:
     chunk_command = """
         mkdir -p {output}
         cp {input.fastq1} {output}/1.00.fastq.gz
         cp {input.fastq2} {output}/2.00.fastq.gz
-        """
+        """ + " >{log} 2>&1"
 
 
 checkpoint chunk_fastq:
@@ -387,16 +494,102 @@ else:  # bwa-meme
 #         "v4.6.0/bio/samtools/faidx"
 
 
+# ---- Per-library genome rearrangement using viewtools ----
+# If a library has a genomic view defined, rearrange the reference genome
+# to create a custom FASTA for that library. The rearranged FASTA and its
+# indexes are marked temp() to save disk space.
+
+if genomic_views:
+
+    rule rearrange_genome:
+        input:
+            genome=genome_path,
+            view=lambda wildcards: genomic_views[wildcards.library],
+        output:
+            genome=_maybe_temp(f"{view_genomes_folder}/{{library}}.{assembly}.fa"),
+        log:
+            f"logs/rearrange_genome/{{library}}.{assembly}.log",
+        conda:
+            "envs/viewtools.yml"
+        threads: 1
+        shell:
+            r"""
+            viewtools rearrange-genome {input.genome} \
+            --view {input.view} \
+            --out {output.genome} \
+            >{log} 2>&1
+            """
+
+    rule make_view_chromsizes:
+        input:
+            genome_fasta=f"{view_genomes_folder}/{{library}}.{assembly}.fa",
+        output:
+            chromsizes=f"{view_genomes_folder}/{{library}}.{assembly}.chromsizes",
+        log:
+            f"logs/make_view_chromsizes/{{library}}.{assembly}.log",
+        conda:
+            "envs/chromsize.yml"
+        threads: 1
+        shell:
+            r"""
+            chromsize --input {input.genome_fasta} --output {output.chromsizes} -t {threads} \
+            >{log} 2>&1
+            """
+
+    if config["map"]["mapper"] == "chromap":
+
+        rule chromap_index_view:
+            input:
+                genome=f"{view_genomes_folder}/{{library}}.{assembly}.fa",
+            output:
+                idx=_maybe_temp(
+                    f"{view_genomes_folder}/{{library}}.{assembly}.fa.chromap.index"
+                ),
+            log:
+                f"logs/chromap_index_view/{{library}}.{assembly}.log",
+            conda:
+                "envs/chromap.yml"
+            shell:
+                r"chromap -i -r {input.genome} -o {output.idx} >{log} 2>&1"
+
+    else:
+
+        view_idx_exts = _get_bwa_index_extensions(config["map"]["mapper"])
+
+        rule bwaindex_view:
+            input:
+                genome=f"{view_genomes_folder}/{{library}}.{assembly}.fa",
+            output:
+                idx=_maybe_temp(
+                    multiext(
+                        f"{view_genomes_folder}/{{library}}.{assembly}.fa",
+                        *view_idx_exts,
+                    )
+                ),
+            log:
+                f"logs/bwaindex_view/{{library}}.{assembly}.log",
+            threads: 1
+            params:
+                bwa=config["map"]["mapper"],
+            wrapper:
+                "v4.6.0/bio/bwa-memx/index"
+
+
 rule make_chromsizes:
     input:
         genome_fasta=config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*"),
     output:
         chromsizes=chromsizes_path,
+    log:
+        f"logs/make_chromsizes/{assembly}.log",
     conda:
         "envs/chromsize.yml"
     threads: 1
     shell:
-        "chromsize --input {input.genome_fasta} --output {output.chromsizes} -t {threads}"
+        r"""
+        chromsize --input {input.genome_fasta} --output {output.chromsizes} -t {threads} \
+        >{log} 2>&1
+        """
 
 
 rule trim:
@@ -452,14 +645,14 @@ if config["map"]["mapper"] == "chromap":
                     f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
                 ]
             ),
-            reference=genome_path,
-            idx=genome_path + ".chromap.index",
+            reference=get_library_genome_path,
+            idx=get_library_chromap_idx,
         output:
-            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.pairs.gz",
+            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.pairs.gz",
         log:
-            "logs/chromap/{library}.{run}.{chunk_id}.log",
+            "logs/chromap/{library}.{run}.{chunk_id}.{assembly_name}.log",
         benchmark:
-            "benchmarks/chromap/{library}.{run}.{chunk_id}.tsv"
+            "benchmarks/chromap/{library}.{run}.{chunk_id}.{assembly_name}.tsv"
         conda:
             "envs/chromap.yml"
         threads: 8
@@ -496,7 +689,7 @@ else:
 
     # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
     # Perhaps something with tee might be faster, had trouble getting it to work
-    output_bam = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
+    output_bam = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.bam"
     if not config["parse"]["keep_unparsed_bams"]:
         output_bam = pipe(output_bam)
 
@@ -513,14 +706,14 @@ else:
                     f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
                 ]
             ),
-            reference=genome_path,
-            idx=idx,
+            reference=get_library_genome_path,
+            idx=get_library_bwa_idx,
         output:
             bam=output_bam,
         log:
-            "logs/bwa_memx/{library}.{run}.{chunk_id}.log",
+            "logs/bwa_memx/{library}.{run}.{chunk_id}.{assembly_name}.log",
         benchmark:
-            "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.tsv"
+            "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.{assembly_name}.tsv"
         threads: 4
         params:
             bwa=config["map"]["mapper"],
@@ -532,14 +725,14 @@ else:
 
     rule parse_sort_chunks:
         input:
-            bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam",
-            chromsizes=chromsizes_path,
+            bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.bam",
+            chromsizes=get_library_chromsizes,
         output:
-            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.pairs.gz",
+            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.pairs.gz",
         log:
-            "logs/parse_sort_chunks/{library}.{run}.{chunk_id}.log",
+            "logs/parse_sort_chunks/{library}.{run}.{chunk_id}.{assembly_name}.log",
         benchmark:
-            "benchmarks/parse_sort_chunks/{library}.{run}.{chunk_id}.tsv"
+            "benchmarks/parse_sort_chunks/{library}.{run}.{chunk_id}.{assembly_name}.tsv"
         conda:
             "envs/pairtools_cooler.yml"
         threads: 4
@@ -571,8 +764,9 @@ def get_pair_chunks(wildcards):
     chunk_ids = glob_wildcards(
         f"{processed_fastqs_folder}/{wildcards.library}/{wildcards.run}/2.{{chunk_id}}.fastq.gz",
     ).chunk_id
+    lib_asm = get_library_assembly(wildcards.library)
     paths = expand(
-        f"{mapped_parsed_sorted_chunks_folder}/{wildcards.library}/{wildcards.run}/{{chunk_id}}.{assembly}.pairs.gz",
+        f"{mapped_parsed_sorted_chunks_folder}/{wildcards.library}/{wildcards.run}/{{chunk_id}}.{lib_asm}.pairs.gz",
         chunk_id=chunk_ids,
     )
     return paths
@@ -582,11 +776,11 @@ rule merge_runs:
     input:
         get_pair_chunks,
     output:
-        f"{pairs_runs_folder}/{{library}}/{{run}}.{assembly}.pairs.gz",
+        f"{pairs_runs_folder}/{{library}}/{{run}}.{{assembly_name}}.pairs.gz",
     log:
-        "logs/merge_runs/{library}.{run}.log",
+        "logs/merge_runs/{library}.{run}.{assembly_name}.log",
     benchmark:
-        "benchmarks/merge_runs/{library}.{run}.tsv"
+        "benchmarks/merge_runs/{library}.{run}.{assembly_name}.tsv"
     conda:
         "envs/pairtools_cooler.yml"
     threads: 4
@@ -629,7 +823,7 @@ if config["parse"]["make_pairsam"]:
         --output-stats {output[6]} \
         """ + bytile_arg + " && pairix {output[0]}"
     merge_output = multiext(
-        f"{pairs_library_folder}/{{library}}.{assembly}",
+        f"{pairs_library_folder}/{{library}}.{{assembly_name}}",
         ".nodups.pairs.gz",
         ".nodups.bam",
         ".unmapped.pairs.gz",
@@ -654,7 +848,7 @@ else:
         --output-stats {output[3]} \
         """ + bytile_arg + " >{log[0]} 2>&1 && pairix {output[0]}"
     merge_output = multiext(
-        f"{pairs_library_folder}/{{library}}.{assembly}",
+        f"{pairs_library_folder}/{{library}}.{{assembly_name}}",
         ".nodups.pairs.gz",
         ".unmapped.pairs.gz",
         ".dups.pairs.gz",
@@ -662,21 +856,23 @@ else:
         ".nodups.pairs.gz.px2",
     )
 if config["dedup"].get("save_by_tile_dups", False):
-    merge_output += [f"{pairs_library_folder}/{{library}}.{assembly}.by_tile_dups.txt"]
+    merge_output += [
+        f"{pairs_library_folder}/{{library}}.{{assembly_name}}.by_tile_dups.txt"
+    ]
 
 
 rule merge_dedup:
     input:
         pairs=lambda wildcards: expand(
-            f"{pairs_runs_folder}/{wildcards.library}/{{run}}.{assembly}.pairs.gz",
+            f"{pairs_runs_folder}/{wildcards.library}/{{run}}.{wildcards.assembly_name}.pairs.gz",
             run=list(LIBRARY_RUN_FASTQS[wildcards.library].keys()),
         ),
     output:
         merge_output,
     log:
-        "logs/merge_dedup/{library}.log",
+        "logs/merge_dedup/{library}.{assembly_name}.log",
     benchmark:
-        "benchmarks/merge_dedup/{library}.tsv"
+        "benchmarks/merge_dedup/{library}.{assembly_name}.tsv"
     conda:
         "envs/pairtools_cooler.yml"
     threads: 4
@@ -704,14 +900,14 @@ rule merge_dedup:
 
 rule bin_pairs_library:
     input:
-        pairs=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.pairs.gz",
-        chromsizes=chromsizes_path,
+        pairs=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.pairs.gz",
+        chromsizes=get_library_chromsizes,
     output:
-        cool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.cool",
+        cool=f"{coolers_library_folder}/{{library}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.cool",
     log:
-        "logs/bin_pairs_library/{library}.{filter_name}.{min_resolution}.log",
+        "logs/bin_pairs_library/{library}.{assembly_name}.{filter_name}.{min_resolution}.log",
     benchmark:
-        "benchmarks/bin_pairs_library/{library}.{filter_name}.{min_resolution}.tsv"
+        "benchmarks/bin_pairs_library/{library}.{assembly_name}.{filter_name}.{min_resolution}.tsv"
     conda:
         "envs/pairtools_cooler.yml"
     threads: 4
@@ -733,13 +929,13 @@ rule bin_pairs_library:
 
 rule zoom_library:
     input:
-        cool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.cool",
+        cool=f"{coolers_library_folder}/{{library}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.cool",
     output:
-        mcool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
+        mcool=f"{coolers_library_folder}/{{library}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.mcool",
     log:
-        "logs/zoom_library/{library}.{filter_name}.{min_resolution}.log",
+        "logs/zoom_library/{library}.{assembly_name}.{filter_name}.{min_resolution}.log",
     benchmark:
-        "benchmarks/zoom_library/{library}.{filter_name}.{min_resolution}.tsv"
+        "benchmarks/zoom_library/{library}.{assembly_name}.{filter_name}.{min_resolution}.tsv"
     conda:
         "envs/pairtools_cooler.yml"
     threads: 8
@@ -765,16 +961,16 @@ rule zoom_library:
 rule merge_zoom_library_group_coolers:
     input:
         lambda wildcards: expand(
-            f"{coolers_library_folder}/{{library}}.{assembly}.{wildcards.filter_name}.{wildcards.min_resolution}.cool",
+            f"{coolers_library_folder}/{{library}}.{wildcards.assembly_name}.{wildcards.filter_name}.{wildcards.min_resolution}.cool",
             library=config["input"]["library_groups"][wildcards.library_group],
         ),
     output:
-        cool=f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.cool",
-        mcool=f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
+        cool=f"{coolers_library_group_folder}/{{library_group}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.cool",
+        mcool=f"{coolers_library_group_folder}/{{library_group}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.mcool",
     log:
-        "logs/merge_zoom_library_group_coolers/{library_group}.{filter_name}.{min_resolution}.log",
+        "logs/merge_zoom_library_group_coolers/{library_group}.{assembly_name}.{filter_name}.{min_resolution}.log",
     benchmark:
-        "benchmarks/merge_zoom_library_group_coolers/{library_group}.{filter_name}.{min_resolution}.tsv"
+        "benchmarks/merge_zoom_library_group_coolers/{library_group}.{assembly_name}.{filter_name}.{min_resolution}.tsv"
     conda:
         "envs/pairtools_cooler.yml"
     threads: 8
@@ -801,13 +997,13 @@ rule merge_zoom_library_group_coolers:
 
 rule mcool2hic_group:
     input:
-        mcool=f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
+        mcool=f"{coolers_library_group_folder}/{{library_group}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.mcool",
     output:
-        hic=f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.hic",
+        hic=f"{coolers_library_group_folder}/{{library_group}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.hic",
     log:
-        "logs/mcool2hic/{library_group}.{filter_name}.{min_resolution}.log",
+        "logs/mcool2hic/{library_group}.{assembly_name}.{filter_name}.{min_resolution}.log",
     benchmark:
-        "benchmarks/mcool2hic/{library_group}.{filter_name}.{min_resolution}.tsv"
+        "benchmarks/mcool2hic/{library_group}.{assembly_name}.{filter_name}.{min_resolution}.tsv"
     conda:
         "envs/hictk.yml"
     threads: 8
@@ -822,25 +1018,25 @@ rule mcool2hic_group:
 
 use rule mcool2hic_group as mcool2hic_library with:
     input:
-        mcool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
+        mcool=f"{coolers_library_folder}/{{library}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.mcool",
     output:
-        hic=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.hic",
+        hic=f"{coolers_library_folder}/{{library}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.hic",
     log:
-        "logs/mcool2hic/{library}.{filter_name}.{min_resolution}.log",
+        "logs/mcool2hic/{library}.{assembly_name}.{filter_name}.{min_resolution}.log",
     benchmark:
-        r"benchmarks/mcool2hic/{library}.{filter_name}.{min_resolution}.tsv"
+        r"benchmarks/mcool2hic/{library}.{assembly_name}.{filter_name}.{min_resolution}.tsv"
 
 
 rule scaling_pairs_library:
     input:
-        pairs=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.pairs.gz",
-        chromsizes=chromsizes_path,
+        pairs=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.pairs.gz",
+        chromsizes=get_library_chromsizes,
     output:
-        scaling=f"{pairs_library_folder}/{{library}}.{assembly}.nodups.scaling.tsv",
+        scaling=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.scaling.tsv",
     log:
-        "logs/scaling_pairs_library/{library}.log",
+        "logs/scaling_pairs_library/{library}.{assembly_name}.log",
     benchmark:
-        "benchmarks/scaling_pairs_library/{library}.tsv"
+        "benchmarks/scaling_pairs_library/{library}.{assembly_name}.tsv"
     conda:
         "envs/pairtools_cooler.yml"
     threads: 4
@@ -881,14 +1077,14 @@ rule scaling_pairs_library:
 
 rule merge_stats_libraries_into_groups:
     input:
-        lambda wildcards: expand(
-            f"{pairs_library_folder}/{{library}}.{assembly}.dedup.stats",
-            library=config["input"]["library_groups"][wildcards.library_group],
-        ),
+        lambda wildcards: [
+            f"{pairs_library_folder}/{library}.{get_library_assembly(library)}.dedup.stats"
+            for library in config["input"]["library_groups"][wildcards.library_group]
+        ],
     output:
-        f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
+        f"{stats_library_group_folder}/{{library_group}}.{{assembly_name}}.stats",
     log:
-        "logs/merge_stats_libraries_into_groups/{library_group}.log",
+        "logs/merge_stats_libraries_into_groups/{library_group}.{assembly_name}.log",
     conda:
         "envs/pairtools_cooler.yml"
     shell:
@@ -898,14 +1094,14 @@ rule merge_stats_libraries_into_groups:
 rule multiqc:
     input:
         fastqc,
-        expand(
-            f"{pairs_library_folder}/{{library}}.{assembly}.dedup.stats",
-            library=config["input"]["raw_reads_paths"].keys(),
-        ),
-        expand(
-            f"{stats_library_group_folder}/{{library_group}}.{assembly}.stats",
-            library_group=config["input"]["library_groups"].keys(),
-        )
+        [
+            f"{pairs_library_folder}/{library}.{get_library_assembly(library)}.dedup.stats"
+            for library in config["input"]["raw_reads_paths"].keys()
+        ],
+        [
+            f"{stats_library_group_folder}/{group}.{get_group_assembly(group)}.stats"
+            for group in config["input"]["library_groups"].keys()
+        ]
         if "library_groups" in config["input"]
         else [],
     output:
@@ -926,13 +1122,13 @@ rule multiqc:
 
 rule resgen_upload_library_group:
     input:
-        mcool=f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
+        mcool=f"{coolers_library_group_folder}/{{library_group}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.mcool",
     output:
         touch(
-            f"{coolers_library_group_folder}/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool_uploaded"
+            f"{coolers_library_group_folder}/{{library_group}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.mcool_uploaded"
         ),
     log:
-        f"logs/resgen_upload_library_group/{{library_group}}.{assembly}.{{filter_name}}.{{min_resolution}}.log",
+        f"logs/resgen_upload_library_group/{{library_group}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.log",
     conda:
         "envs/resgen_python.yml"
     params:
@@ -949,10 +1145,10 @@ rule resgen_upload_library_group:
 
 use rule resgen_upload_library_group as resgen_upload_library with:
     input:
-        mcool=f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool",
+        mcool=f"{coolers_library_folder}/{{library}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.mcool",
     output:
         touch(
-            f"{coolers_library_folder}/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.mcool_uploaded"
+            f"{coolers_library_folder}/{{library}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.mcool_uploaded"
         ),
     log:
-        f"logs/resgen_upload_library/{{library}}.{assembly}.{{filter_name}}.{{min_resolution}}.log",
+        f"logs/resgen_upload_library/{{library}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.log",
