@@ -45,10 +45,12 @@ keep_view_genomes = config.get("input", {}).get("keep_view_genomes", False)
 
 
 def get_library_assembly(library):
-    """Return the assembly name for a library: '{assembly}_view' if it has a
-    genomic view, otherwise the base assembly name."""
+    """Return the assembly name for a library: '{assembly}.{view_stem}' if it has a
+    genomic view, otherwise the base assembly name.
+    The view stem is derived from the view file name (without extension)."""
     if library in genomic_views:
-        return f"{assembly}_view"
+        view_stem = Path(genomic_views[library]).stem
+        return f"{assembly}.{view_stem}"
     return assembly
 
 
