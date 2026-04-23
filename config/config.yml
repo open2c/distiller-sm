@@ -194,20 +194,11 @@ bin:
     # Specify which resolutions should be included in the multi-resolution .cool file.
     # The lowest (base) resolution _must_ be the common denominator of all other
     # resolutions.
-    resolutions:
-        - 10000000
-        - 5000000
-        - 2500000
-        - 1000000
-        - 500000
-        - 250000
-        - 100000
-        - 50000
-        - 25000
-        - 10000
-        - 5000
-        - 2000
-        - 1000
+    # Resolutions can be specified as a list of integers, or as a string with the syntax
+    # following https://cooler.readthedocs.io/en/latest/cli.html#cmdoption-cooler-zoomify-r
+    # (except you have to specify at least one base resolution when using the binary
+    # progression as the base resolution, e.g. "128B").
+    resolutions: "4DN"
 
     # Specify if the multi-resolution .cool output files should be balanced.
     balance: True
