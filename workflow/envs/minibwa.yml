@@ -1,0 +1,8 @@
+name: minibwa_env
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - minibwa
+  - samtools
