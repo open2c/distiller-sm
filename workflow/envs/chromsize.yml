@@ -4,4 +4,4 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  - chromsize
+  - chromsize>=0.0.34

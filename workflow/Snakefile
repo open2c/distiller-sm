@@ -430,7 +430,7 @@ rule make_chromsizes:
         "envs/chromsize.yml"
     threads: 1
     shell:
-        "chromsize --input {input.genome_fasta} --output {output.chromsizes} -t {threads}"
+        "chromsize --sequence {input.genome_fasta} -o $(dirname {output.chromsizes}) -p $(basename {output.chromsizes}) -t {threads}"
 
 
 rule trim:
@@ -512,76 +512,29 @@ if mapper == "chromap":
             -o /dev/stdout 2>{log} | bgzip > {output}
             """
 
-elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3"):  # , "minibwa"):
+elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
     # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
     # Perhaps something with tee might be faster, had trouble getting it to work
     output_bam = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam"
     if not config["parse"]["keep_unparsed_bams"]:
         output_bam = pipe(output_bam)
 
-    # if mapper == "minibwa":
+    if mapper == "minibwa":
 
-    #     rule minibwaindex:
-    #         input:
-    #             genome=genome_path,
-    #         output:
-    #             idx=idx,
-    #         log:
-    #             f"logs/minibwa_index/{assembly}.log",
-    #         conda:
-    #             "envs/minibwa.yml"
-    #         threads: 1
-    #         shell:
-    #             "minibwa index {input.genome} >{log} 2>&1"
+        rule minibwaindex:
+            input:
+                genome=genome_path,
+            output:
+                idx=idx,
+            log:
+                f"logs/minibwa_index/{assembly}.log",
+            conda:
+                "envs/minibwa.yml"
+            threads: 1
+            shell:
+                "minibwa index {input.genome} >{log} 2>&1"
 
-    #     rule map_chunks_minibwa:
-    #         input:
-    #             reads=lambda wildcards: (
-    #                 [
-    #                     f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
-    #                     f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
-    #                 ]
-    #                 if config["map"]["trim_options"]
-    #                 else [
-    #                     f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
-    #                     f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
-    #                 ]
-    #             ),
-    #             reference=genome_path,
-    #             idx=idx,
-    #         output:
-    #             bam=output_bam,
-    #         log:
-    #             "logs/minibwa/{library}.{run}.{chunk_id}.log",
-    #         benchmark:
-    #             "benchmarks/minibwa/{library}.{run}.{chunk_id}.tsv"
-    #         conda:
-    #             "envs/minibwa.yml"
-    #         threads: 4
-    #         params:
-    #             extra="--hic " + config["map"].get("mapping_options", ""),
-    #         shell:
-    #             "minibwa map -t{threads} {params.extra} {input.reference} {input.reads[0]} {input.reads[1]} 2>{log} | samtools view -bS > {output.bam} 2>{log}"
-
-    # else:
-
-    rule bwaindex:
-        input:
-            genome=genome_path,
-        output:
-            idx=idx,
-        log:
-            f"logs/bwa-memx_index/{assembly}.log",
-        cache: True
-        threads: 1  #Only affects bwa-meme
-        params:
-            bwa=mapper,
-        wrapper:
-            "v9.9.0/bio/bwa-memx/index"
-
-    if mapper == "bwa-mem3":
-
-        rule map_chunks_bwamem3:
+        rule map_chunks_minibwa:
             input:
                 reads=lambda wildcards: (
                     [
@@ -599,48 +552,95 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3"):  # , "minibwa"):
             output:
                 bam=output_bam,
             log:
-                "logs/bwa_mem3/{library}.{run}.{chunk_id}.log",
+                "logs/minibwa/{library}.{run}.{chunk_id}.log",
             benchmark:
-                "benchmarks/bwa_mem3/{library}.{run}.{chunk_id}.tsv"
+                "benchmarks/minibwa/{library}.{run}.{chunk_id}.tsv"
             conda:
-                "envs/bwa_mem3.yml"
+                "envs/minibwa.yml"
             threads: 4
             params:
-                extra="-SP " + config["map"].get("mapping_options", ""),
+                extra="--hic " + config["map"].get("mapping_options", ""),
             shell:
-                "bwa-mem3 mem -t {threads} {params.extra} {input.reference} {input.reads[0]} {input.reads[1]} --bam -o {output.bam} >{log} 2>&1"
+                "minibwa map -t{threads} {params.extra} {input.reference} {input.reads[0]} {input.reads[1]} 2>{log} | samtools view -bS > {output.bam} 2>{log}"
 
     else:
 
-        rule map_chunks_bwa:
+        rule bwaindex:
             input:
-                reads=lambda wildcards: (
-                    [
-                        f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
-                        f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
-                    ]
-                    if config["map"]["trim_options"]
-                    else [
-                        f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
-                        f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
-                    ]
-                ),
-                reference=genome_path,
-                idx=idx,
+                genome=genome_path,
             output:
-                bam=output_bam,
+                idx=idx,
             log:
-                "logs/bwa_memx/{library}.{run}.{chunk_id}.log",
-            benchmark:
-                "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.tsv"
-            threads: 4
+                f"logs/bwa-memx_index/{assembly}.log",
+            cache: True
+            threads: 1  #Only affects bwa-meme
             params:
                 bwa=mapper,
-                extra="-SP " + config["map"].get("mapping_options", ""),
-                sort="none",
-                dedup="none",
             wrapper:
-                "v2.2.1/bio/bwa-memx/mem"
+                "v9.9.0/bio/bwa-memx/index"
+
+        if mapper == "bwa-mem3":
+
+            rule map_chunks_bwamem3:
+                input:
+                    reads=lambda wildcards: (
+                        [
+                            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
+                            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
+                        ]
+                        if config["map"]["trim_options"]
+                        else [
+                            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
+                            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
+                        ]
+                    ),
+                    reference=genome_path,
+                    idx=idx,
+                output:
+                    bam=output_bam,
+                log:
+                    "logs/bwa_mem3/{library}.{run}.{chunk_id}.log",
+                benchmark:
+                    "benchmarks/bwa_mem3/{library}.{run}.{chunk_id}.tsv"
+                conda:
+                    "envs/bwa_mem3.yml"
+                threads: 4
+                params:
+                    extra="-SP " + config["map"].get("mapping_options", ""),
+                shell:
+                    "bwa-mem3 mem -t {threads} {params.extra} {input.reference} {input.reads[0]} {input.reads[1]} --bam -o {output.bam} >{log} 2>&1"
+
+        else:
+
+            rule map_chunks_bwa:
+                input:
+                    reads=lambda wildcards: (
+                        [
+                            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
+                            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
+                        ]
+                        if config["map"]["trim_options"]
+                        else [
+                            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
+                            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
+                        ]
+                    ),
+                    reference=genome_path,
+                    idx=idx,
+                output:
+                    bam=output_bam,
+                log:
+                    "logs/bwa_memx/{library}.{run}.{chunk_id}.log",
+                benchmark:
+                    "benchmarks/bwa_memx/{library}.{run}.{chunk_id}.tsv"
+                threads: 4
+                params:
+                    bwa=mapper,
+                    extra="-SP " + config["map"].get("mapping_options", ""),
+                    sort="none",
+                    dedup="none",
+                wrapper:
+                    "v2.2.1/bio/bwa-memx/mem"
 
     rule parse_sort_chunks:
         input:
@@ -665,7 +665,7 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3"):  # , "minibwa"):
             dropreadid_flag=(
                 "--drop-readid" if config["parse"].get("drop_readid", False) else ""
             ),
-            dropseq_flag="--drop-seq" if config["parse"].get("drop_seq", True) else "",
+            dropseq_flag=("--drop-seq" if config["parse"].get("drop_seq", True) else ""),
             parsing_options=config["parse"].get("parsing_options", ""),
         shell:
             r"""
@@ -675,6 +675,9 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3"):  # , "minibwa"):
             | pairtools sort --nproc {threads} -o {output} \
             >{log[0]} 2>&1
             """
+
+else:
+    raise ValueError(f"Unknown mapper: {mapper}")
 
 
 # Find out the chunk ids for each library and run - since we don't know them beforehand
@@ -1019,7 +1022,7 @@ rule multiqc:
         if "library_groups" in config["input"]
         else [],
     output:
-        f"{multiqc_folder}/multiqc_report.html",
+        report(f"{multiqc_folder}/multiqc_report.html", category="multiqc"),
         directory(f"{multiqc_folder}/multiqc_data"),
     log:
         "logs/multiqc.log",
