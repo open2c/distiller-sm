@@ -5,5 +5,7 @@ channels:
   - nodefaults
 dependencies:
   - python>=3.8
-  - pairtools>=1.1.0
+  # - pairtools>=1.1.0
   - cooler>=0.10.2
+  - pip:
+    - https://github.com/open2c/pairtools/archive/refs/heads/fix-scaling.zip

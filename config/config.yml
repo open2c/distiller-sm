@@ -70,7 +70,8 @@ do_fastqc: False
 
 # Control how reads are mapped to the reference genomes.
 map:
-    mapper: 'bwa-mem' #available: 'bwa-mem', 'bwa-mem2', 'bwa-meme', 'chromap'
+    mapper: 'bwa-mem3' 
+    #available: 'bwa-mem', 'bwa-mem2', 'bwa-mem3', 'bwa-meme', 'chromap'
     # If using 'chromap', all parsing parameters are ignored, since chromap
     # outputs deduplicated .pairs files directly.
     # In addition, chromap saves a minimal .pairs file with only the strictly required
@@ -86,7 +87,8 @@ map:
     # however, having >~10 chunks per run slow down merging.
     chunksize: 0
 
-    # Specify extra BWA/chromap mapping options.
+    # Specify extra BWA/chromap mapping options. Minimal required options are already
+    # set by distiller, so you can use this parameter to add additional options.
     mapping_options: ''
 
     # Specify fastp trim options.
@@ -194,20 +196,11 @@ bin:
     # Specify which resolutions should be included in the multi-resolution .cool file.
     # The lowest (base) resolution _must_ be the common denominator of all other
     # resolutions.
-    resolutions:
-        - 10000000
-        - 5000000
-        - 2500000
-        - 1000000
-        - 500000
-        - 250000
-        - 100000
-        - 50000
-        - 25000
-        - 10000
-        - 5000
-        - 2000
-        - 1000
+    # Resolutions can be specified as a list of integers, or as a string with the syntax
+    # following https://cooler.readthedocs.io/en/latest/cli.html#cmdoption-cooler-zoomify-r
+    # (except you have to specify at least one base resolution when using the binary
+    # progression as the base resolution, e.g. "128B").
+    resolutions: "4DN"
 
     # Specify if the multi-resolution .cool output files should be balanced.
     balance: True
@@ -221,7 +214,7 @@ bin:
     # Filters are specified using the following syntax:
     # {filter_name}: '{a valid Python expression}'
     filters:
-        no_filter: ''
+        # no_filter: ''
         # comment out the following when using chromap:
         mapq_30: '(mapq1>=30) and (mapq2>=30)'
     

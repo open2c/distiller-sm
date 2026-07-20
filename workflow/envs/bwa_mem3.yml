@@ -1,7 +1,7 @@
-name: chromsize_env
+name: bwamem3_env
 channels:
   - conda-forge
   - bioconda
   - nodefaults
 dependencies:
-  - chromsize>=0.0.34
+  - bwa-mem3
