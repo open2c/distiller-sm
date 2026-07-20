@@ -3,16 +3,17 @@ import os, pathlib
 import numpy as np
 import shlex
 
+
 def argstring_to_dict(argstring):
     """
     Convert a command line argument string into a dictionary.
-    
+
     Args:
         argstring (str): The command line argument string.
-        
+
     Returns:
         dict: A dictionary with argument names as keys and their values.
-        
+
     Note:
         - Arguments that start with '-' are considered keys.
         - If an argument has no value, it is set to True.
@@ -20,11 +21,14 @@ def argstring_to_dict(argstring):
         - If the final argument is a value without a preceding key, it will be included as a value for the last key (issue in case of specified input as last argument).
     """
     args = shlex.split(argstring)
-    keys = np.where([arg.startswith('-') for arg in args])[0]
-    vals = np.where([not arg.startswith('-') for arg in args])[0]
+    keys = np.where([arg.startswith("-") for arg in args])[0]
+    vals = np.where([not arg.startswith("-") for arg in args])[0]
     args_arrs = [arr for arr in np.split(args, keys) if arr.size > 0]
-    argdict = {str(arr[0]): (' '.join(arr[1:]) if arr.size > 1 else True) for arr in args_arrs }
+    argdict = {
+        str(arr[0]): (" ".join(arr[1:]) if arr.size > 1 else True) for arr in args_arrs
+    }
     return argdict
+
 
 def needs_downloading(fastq_files, side):
     if len(fastq_files) == 1 and fastq_files[0].startswith("sra:"):
@@ -60,6 +64,37 @@ def parse_fastq_folder(root_folder_path):
         )
 
     return library_run_fastqs
+
+
+def has_custom_view(config, library):
+    """Check if a library has a custom genomic view defined."""
+    return library in config.get("input", {}).get("genomic_views", {})
+
+
+def get_view_path(config, library):
+    """Return the genomic view file path for a library, or None."""
+    return config.get("input", {}).get("genomic_views", {}).get(library, None)
+
+
+def get_view_genome_folder(config):
+    """Return the folder where rearranged genomes are stored."""
+    return config["output"]["dirs"].get("view_genomes", "results/view_genomes")
+
+
+def get_genome_path_for_library(config, library, assembly, default_genome_path):
+    """Return the genome FASTA path for a library (rearranged or default)."""
+    if has_custom_view(config, library):
+        view_genomes_folder = get_view_genome_folder(config)
+        return f"{view_genomes_folder}/{library}.{assembly}.fa"
+    return default_genome_path
+
+
+def get_chromsizes_for_library(config, library, assembly, default_chromsizes_path):
+    """Return the chromsizes path for a library (rearranged or default)."""
+    if has_custom_view(config, library):
+        view_genomes_folder = get_view_genome_folder(config)
+        return f"{view_genomes_folder}/{library}.{assembly}.chromsizes"
+    return default_chromsizes_path
 
 
 def check_fastq_dict_structure(library_run_fastqs):
