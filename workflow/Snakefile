@@ -44,6 +44,9 @@ genomic_views = config.get("input", {}).get("genomic_views", {})
 keep_view_genomes = config.get("input", {}).get("keep_view_genomes", False)
 
 
+include: "rules/custom.smk"
+
+
 def get_library_assembly(library):
     """Return the assembly name for a library: '{assembly}.{view_stem}' if it has a
     genomic view, otherwise the base assembly name.
@@ -59,13 +62,15 @@ def _maybe_temp(path):
     return path if keep_view_genomes else temp(path)
 
 
-def _get_bwa_index_extensions(mapper):
-    """Return the BWA index file extensions for the given mapper."""
+def _get_index_extensions(mapper):
+    """Return the index file extensions for the given mapper."""
     if mapper == "bwa-mem":
         return [".amb", ".ann", ".bwt", ".pac", ".sa"]
-    elif mapper == "bwa-mem2":
+    elif mapper in ["bwa-mem2", "bwa-mem3"]:
         return [".0123", ".amb", ".ann", ".bwt.2bit.64", ".pac"]
-    else:  # bwa-meme
+    elif mapper == "minibwa":
+        return [".l2b", ".mbw"]
+    elif mapper == "bwa-meme":  # bwa-meme
         return [
             ".0123",
             ".amb",
@@ -77,42 +82,42 @@ def _get_bwa_index_extensions(mapper):
             ".suffixarray_uint64_L1_PARAMETERS",
             ".suffixarray_uint64_L2_PARAMETERS",
         ]
+    elif mapper == "chromap":
+        return [".chromap.index"]
+    else:
+        raise ValueError(f"Unknown mapper: {mapper}")
+
+
+def _resolve_library_genome(library):
+    """Return (fasta_path, chromsizes_path) for a library: the rearranged
+    per-library genome if it has a genomic view, otherwise the shared genome."""
+    if library in genomic_views:
+        return (
+            f"{view_genomes_folder}/{library}.{assembly}.fa",
+            f"{view_genomes_folder}/{library}.{assembly}.chromsizes",
+        )
+    return genome_path, chromsizes_path
 
 
 def get_library_genome_path(wildcards):
     """Return the genome FASTA path for the library in wildcards."""
-    library = wildcards.library
-    if library in genomic_views:
-        return f"{view_genomes_folder}/{library}.{assembly}.fa"
-    return genome_path
+    return _resolve_library_genome(wildcards.library)[0]
 
 
 def get_library_chromsizes(wildcards):
     """Return the chromsizes path for the library in wildcards."""
-    library = wildcards.library
-    if library in genomic_views:
-        return f"{view_genomes_folder}/{library}.{assembly}.chromsizes"
-    return chromsizes_path
+    return _resolve_library_genome(wildcards.library)[1]
 
 
-def get_library_bwa_idx(wildcards):
-    """Return the BWA index files for the library in wildcards."""
-    library = wildcards.library
-    exts = _get_bwa_index_extensions(config["map"]["mapper"])
-    if library in genomic_views:
-        base = f"{view_genomes_folder}/{library}.{assembly}.fa"
-        return [base + ext for ext in exts]
-    return [genome_path + ext for ext in exts]
+def get_idx(wildcards):
+    """Return the index files for the library in wildcards."""
+    library = wildcards.get("library", "")
+    fasta = _resolve_library_genome(library)[0] if library else genome_path
+    return [fasta + ext for ext in IDX_EXTS]
 
-
-def get_library_chromap_idx(wildcards):
-    """Return the chromap index file for the library in wildcards."""
-    library = wildcards.library
-    if library in genomic_views:
-        return f"{view_genomes_folder}/{library}.{assembly}.fa.chromap.index"
-    return genome_path + ".chromap.index"
 
 mapper = config["map"]["mapper"]
+IDX_EXTS = _get_index_extensions(mapper)
 
 LIBRARY_RUN_FASTQS = organize_fastqs(config)
 runs = [list(LIBRARY_RUN_FASTQS[lib].keys()) for lib in LIBRARY_RUN_FASTQS.keys()]
@@ -122,7 +127,6 @@ resolutions_spec = config["bin"]["resolutions"]
 
 if isinstance(resolutions_spec, list):
     min_resolution = min(config["bin"]["resolutions"])
-    resolution_mode = "explicit"
     res_string = ",".join([str(res) for res in resolutions_spec])
 elif isinstance(resolutions_spec, str):
     if resolutions_spec.lower() == "4dn":
@@ -176,7 +180,7 @@ if config["parse"]["keep_unparsed_bams"]:
 
 # Setting up scaling from pairs outputs if required
 library_scaling_pairs = []
-if "scaling_pairs" in config and config["scaling_pairs"].get("do", True):
+if "scaling_pairs" in config and config["scaling_pairs"].get("do_scaling", True):
     for library in LIBRARY_RUN_FASTQS.keys():
         lib_asm = get_library_assembly(library)
         library_scaling_pairs.append(
@@ -388,7 +392,8 @@ rule download_fastqs:
         "envs/download_fastqs.yml"
     threads: 8
     params:
-        bgzip_threads=lambda wildcards, threads: max(1, (threads - 2) / 2),
+        bgzip_threads=lambda wildcards, threads: max(1, (threads - 2) // 2),
+        downloaded_fastqs_folder=downloaded_fastqs_folder,
         fastq_files=lambda wildcards: LIBRARY_RUN_FASTQS[wildcards.library][
             wildcards.run
         ],
@@ -452,7 +457,7 @@ checkpoint chunk_fastq:
 rule fastqc:
     input:
         lambda wildcards: (
-            f"downloaded_fastqs/{wildcards.library}.{wildcards.run}.{wildcards.side}.fastq.gz"
+            f"{downloaded_fastqs_folder}/{wildcards.library}.{wildcards.run}.{wildcards.side}.fastq.gz"
             if needs_downloading(
                 LIBRARY_RUN_FASTQS[wildcards.library][wildcards.run],
                 int(wildcards.side) - 1,
@@ -471,47 +476,6 @@ rule fastqc:
     threads: 1
     wrapper:
         "v9.9.0/bio/fastqc"
-
-
-# Depending on the mapper, the index files will be different
-if mapper == "bwa-mem":
-    idx = multiext(
-        genome_path,
-        ".amb",
-        ".ann",
-        ".bwt",
-        ".pac",
-        ".sa",
-    )
-
-elif mapper in ("bwa-mem2", "bwa-mem3"):
-    idx = multiext(
-        genome_path,
-        ".0123",
-        ".amb",
-        ".ann",
-        ".bwt.2bit.64",
-        ".pac",
-    )
-elif mapper == "minibwa":  # for the future?
-    idx = multiext(
-        genome_path,
-        ".l2b",
-        ".mbw",
-    )
-else:  # bwa-meme
-    idx = multiext(
-        genome_path,
-        ".0123",
-        ".amb",
-        ".ann",
-        ".pac",
-        ".pos_packed",
-        ".suffixarray_uint64",
-        ".suffixarray_uint64_L0_PARAMETERS",
-        ".suffixarray_uint64_L1_PARAMETERS",
-        ".suffixarray_uint64_L2_PARAMETERS",
-    )
 
 
 # faidx doesn't work with gzipped files :( So test fails, but probably should work
@@ -555,74 +519,115 @@ if genomic_views:
             >{log} 2>&1
             """
 
-    rule make_view_chromsizes:
-        input:
-            genome_fasta=f"{view_genomes_folder}/{{library}}.{assembly}.fa",
-        output:
-            chromsizes=f"{view_genomes_folder}/{{library}}.{assembly}.chromsizes",
-        log:
-            f"logs/make_view_chromsizes/{{library}}.{assembly}.log",
-        conda:
-            "envs/chromsize.yml"
-        threads: 1
-        shell:
-            r"""
-            chromsize --input {input.genome_fasta} --output {output.chromsizes} -t {threads} \
-            >{log} 2>&1
-            """
 
-    if config["map"]["mapper"] == "chromap":
-
-        rule chromap_index_view:
-            input:
-                genome=f"{view_genomes_folder}/{{library}}.{assembly}.fa",
-            output:
-                idx=_maybe_temp(
-                    f"{view_genomes_folder}/{{library}}.{assembly}.fa.chromap.index"
-                ),
-            log:
-                f"logs/chromap_index_view/{{library}}.{assembly}.log",
-            conda:
-                "envs/chromap.yml"
-            shell:
-                r"chromap -i -r {input.genome} -o {output.idx} >{log} 2>&1"
-
-    else:
-
-        view_idx_exts = _get_bwa_index_extensions(config["map"]["mapper"])
-
-        rule bwaindex_view:
-            input:
-                genome=f"{view_genomes_folder}/{{library}}.{assembly}.fa",
-            output:
-                idx=_maybe_temp(
-                    multiext(
-                        f"{view_genomes_folder}/{{library}}.{assembly}.fa",
-                        *view_idx_exts,
-                    )
-                ),
-            log:
-                f"logs/bwaindex_view/{{library}}.{assembly}.log",
-            threads: 1
-            params:
-                bwa=config["map"]["mapper"],
-            wrapper:
-                "v4.6.0/bio/bwa-memx/index"
+# ---- Genome chromsizes and mapper index ----
+# One rule body per mapper/tool, written once against the per-library
+# (view) genome path and reused for the shared genome via `use rule ... as
+# ... with:` so the shell/wrapper logic isn't duplicated between the two
+# genome scenarios. The view-genome outputs stay temp()-wrapped (subject to
+# keep_view_genomes); the shared-genome outputs are always kept.
 
 
-rule make_chromsizes:
+rule make_view_chromsizes:
     input:
-        genome_fasta=config["input"]["genome"]["bwa_index_wildcard_path"].rstrip("*"),
+        genome_fasta=f"{view_genomes_folder}/{{library}}.{assembly}.fa",
     output:
-        chromsizes=chromsizes_path,
+        chromsizes=f"{view_genomes_folder}/{{library}}.{assembly}.chromsizes",
     log:
-        f"logs/make_chromsizes/{assembly}.log",
+        f"logs/make_view_chromsizes/{{library}}.{assembly}.log",
     conda:
         "envs/chromsize.yml"
     threads: 1
     shell:
-        "chromsize --sequence {input.genome_fasta} -o $(dirname {output.chromsizes}) -p $(basename {output.chromsizes}) -t {threads}         >{log} 2>&1
-"
+        r"""
+        chromsize --sequence {input.genome_fasta} -o $(dirname {output.chromsizes}) -p $(basename {output.chromsizes}) -t {threads} \
+        >{log} 2>&1
+        """
+
+
+use rule make_view_chromsizes as make_chromsizes with:
+    input:
+        genome_fasta=genome_path,
+    output:
+        chromsizes=chromsizes_path,
+    log:
+        f"logs/make_chromsizes/{assembly}.log",
+
+
+if mapper == "chromap":
+
+    rule chromap_index:
+        input:
+            genome=f"{view_genomes_folder}/{{library}}.{assembly}.fa",
+        output:
+            idx=_maybe_temp(
+                f"{view_genomes_folder}/{{library}}.{assembly}.fa.chromap.index"
+            ),
+        log:
+            f"logs/chromap_index/{{library}}.{assembly}.log",
+        conda:
+            "envs/chromap.yml"
+        shell:
+            r"chromap -i -r {input.genome} -o {output.idx} >{log} 2>&1"
+
+    use rule chromap_index as chromap_index_global with:
+        input:
+            genome=genome_path,
+        output:
+            idx=genome_path + ".chromap.index",
+        log:
+            f"logs/chromap_index/{assembly}.log",
+
+elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3"):
+
+    rule bwaindex:
+        input:
+            genome=f"{view_genomes_folder}/{{library}}.{assembly}.fa",
+        output:
+            idx=_maybe_temp(
+                multiext(f"{view_genomes_folder}/{{library}}.{assembly}.fa", *IDX_EXTS)
+            ),
+        log:
+            f"logs/bwaindex/{{library}}.{assembly}.log",
+        cache: True
+        threads: 1  #Only affects bwa-meme
+        params:
+            bwa=mapper,
+        wrapper:
+            "v9.9.0/bio/bwa-memx/index"
+
+    use rule bwaindex as bwaindex_global with:
+        input:
+            genome=genome_path,
+        output:
+            idx=multiext(genome_path, *IDX_EXTS),
+        log:
+            f"logs/bwaindex/{assembly}.log",
+
+elif mapper == "minibwa":
+
+    rule minibwaindex:
+        input:
+            genome=f"{view_genomes_folder}/{{library}}.{assembly}.fa",
+        output:
+            idx=_maybe_temp(
+                multiext(f"{view_genomes_folder}/{{library}}.{assembly}.fa", *IDX_EXTS)
+            ),
+        log:
+            f"logs/minibwaindex/{{library}}.{assembly}.log",
+        conda:
+            "envs/minibwa.yml"
+        threads: 1
+        shell:
+            "minibwa index {input.genome} >{log} 2>&1"
+
+    use rule minibwaindex as minibwaindex_global with:
+        input:
+            genome=genome_path,
+        output:
+            idx=multiext(genome_path, *IDX_EXTS),
+        log:
+            f"logs/minibwaindex/{assembly}.log",
 
 
 rule trim:
@@ -653,18 +658,6 @@ rule trim:
 
 if mapper == "chromap":
 
-    rule chromap_index:
-        input:
-            genome=genome_path,
-        output:
-            idx=genome_path + ".chromap.index",
-        log:
-            f"logs/chromap_index/{assembly}.log",
-        conda:
-            "envs/chromap.yml"
-        shell:
-            r"chromap -i -r {input.genome} -o {output.idx} >{log} 2>&1"
-
     rule map_chunks_chromap:
         input:
             reads=lambda wildcards: (
@@ -679,7 +672,7 @@ if mapper == "chromap":
                 ]
             ),
             reference=get_library_genome_path,
-            idx=get_library_chromap_idx,
+            idx=get_idx,
         output:
             f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.pairs.gz",
         log:
@@ -713,19 +706,6 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
 
     if mapper == "minibwa":
 
-        rule minibwaindex:
-            input:
-                genome=genome_path,
-            output:
-                idx=idx,
-            log:
-                f"logs/minibwa_index/{assembly_name}.log",
-            conda:
-                "envs/minibwa.yml"
-            threads: 1
-            shell:
-                "minibwa index {input.genome} >{log} 2>&1"
-
         rule map_chunks_minibwa:
             input:
                 reads=lambda wildcards: (
@@ -739,8 +719,8 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
                         f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
                     ]
                 ),
-                reference=genome_path,
-                idx=idx,
+                reference=get_library_genome_path,
+                idx=get_idx,
             output:
                 bam=output_bam,
             log:
@@ -757,20 +737,6 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
 
     else:
 
-        rule bwaindex:
-            input:
-                genome=genome_path,
-            output:
-                idx=idx,
-            log:
-                f"logs/bwa-memx_index/{assembly}.log",
-            cache: True
-            threads: 1  #Only affects bwa-meme
-            params:
-                bwa=mapper,
-            wrapper:
-                "v9.9.0/bio/bwa-memx/index"
-
         if mapper == "bwa-mem3":
 
             rule map_chunks_bwamem3:
@@ -786,8 +752,8 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
                             f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
                         ]
                     ),
-                    reference=genome_path,
-                    idx=idx,
+                    reference=get_library_genome_path,
+                    idx=get_idx,
                 output:
                     bam=output_bam,
                 log:
@@ -817,8 +783,8 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
                             f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
                         ]
                     ),
-                    reference=genome_path,
-                    idx=idx,
+                    reference=get_library_genome_path,
+                    idx=get_idx,
                 output:
                     bam=output_bam,
                 log:
@@ -1031,12 +997,11 @@ rule bin_pairs_library:
             if config["bin"]["filters"][wildcards.filter_name]
             else ""
         ),
-        assembly=assembly,
         bgzip_threads=lambda wildcards, threads: max(1, (threads - 1)),
     shell:
         r"""
         bgzip -dc -@ {params.bgzip_threads} {input.pairs} {params.filter_command} | cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 \
-        --assembly {params.assembly} \
+        --assembly {wildcards.assembly_name} \
         {input.chromsizes}:{wildcards.min_resolution} - {output.cool} >{log[0]} 2>&1
         """
 
@@ -1208,7 +1173,7 @@ rule multiqc:
         fastqc,
         [
             f"{pairs_library_folder}/{library}.{get_library_assembly(library)}.dedup.stats"
-            for library in config["input"]["raw_reads_paths"].keys()
+            for library in LIBRARY_RUN_FASTQS.keys()
         ],
         [
             f"{stats_library_group_folder}/{group}.{get_group_assembly(group)}.stats"
@@ -1242,10 +1207,9 @@ rule resgen_upload_library_group:
     params:
         user=config["resgen"]["user"],
         project=config["resgen"]["project"],
-        assembly=assembly,
     shell:
         r"""resgen sync datasets '{params.user}' '{params.project}' {input.mcool} \
-        --tag filetype:cooler --tag assembly:{params.assembly} --tag datatype:matrix \
+        --tag filetype:cooler --tag assembly:{wildcards.assembly_name} --tag datatype:matrix \
         --force-update 'true' \
         >{log[0]} 2>&1
         """
