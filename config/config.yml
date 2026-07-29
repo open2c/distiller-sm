@@ -103,6 +103,45 @@ map:
     # about unpaired reads.
     use_custom_split: True
 
+# Which implementation is used for every pairs-processing step (parse, sort, merge,
+# dedup, select, scaling, stats).
+pairtools:
+    # 'pairtools' - the classic pipeline. Intermediate pairs are bgzipped text
+    #               (.pairs.gz) and the deduplicated library pairs are indexed with
+    #               pairix.
+    # 'parquet'   - pairtools_parquet (https://github.com/Phlya/pairtools_parquet).
+    #               Intermediate pairs are stored as .parquet and streamed between
+    #               steps as Arrow IPC, which avoids text (de)serialisation
+    #               throughout. Substantially faster, especially for dedup and sort.
+    #               No pairix index is produced: parquet cannot be bgzf-indexed, and
+    #               nothing downstream in this workflow needs one.
+    backend: 'parquet'
+
+    ############################################################
+    # The remaining options only apply when backend == 'parquet'.
+    ############################################################
+
+    # Duplicate-detection backend.
+    # 'duckdb' is the default and by far the fastest. It differs from pairtools by
+    # roughly 3 rows per million: where a chain of near-duplicates straddles a chunk
+    # boundary, pairtools drops the link and reports the tail as unique, while
+    # duckdb keeps the chain intact. Use 'scipy' (or 'sklearn') to reproduce
+    # pairtools' KD-tree implementation exactly, at the cost of most of the speedup.
+    dedup_backend: 'duckdb'
+
+    # Memory budget handed to DuckDB for sort/merge/dedup.
+    memory: '2G'
+
+    # Directory DuckDB spills to, and where dedup spools its input when it is fed
+    # from a pipe. Leave empty for the system default; on a cluster, point this at
+    # fast local scratch.
+    tmpdir: ''
+
+    # Also write the deduplicated library pairs as bgzipped text (.nodups.pairs.gz)
+    # plus a pairix index, in addition to the .parquet. Nothing in the workflow
+    # needs this; enable it only if you have external tools that read .pairs.
+    export_text_pairs: False
+
 # Control how read alignments are converted ('parsed') into Hi-C pairs.
 parse:
     # If 'make_pairsam' is True, parsed Hi-C pairs will store complete

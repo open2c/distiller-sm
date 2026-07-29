@@ -32,6 +32,38 @@ snakemake --use-conda --cores $Ncores --configfile config/config.yml
 ```
 This will also create all required conda environments which will be reused in future runs of the same workflow.
 
+### Pairs processing backend
+
+Every pairs-processing step (parse, sort, merge, dedup, select, scaling, stats) can run
+with either of two implementations, selected by `pairtools.backend` in the config:
+
+- `pairtools` — the classic pipeline. Intermediate pairs are bgzipped text
+  (`.pairs.gz`) and the deduplicated library pairs get a `pairix` index.
+- `parquet` — [`pairtools_parquet`](https://github.com/Phlya/pairtools_parquet).
+  Intermediate pairs are stored as `.parquet` and streamed between steps as Arrow IPC,
+  so nothing is serialised to text along the way. Substantially faster, particularly
+  for dedup and sort, and the intermediates are smaller on disk. No `pairix` index is
+  produced — parquet cannot be bgzf-indexed, and nothing downstream needs one. Text
+  `.pairs.gz` can still be exported with `pairtools.export_text_pairs: True`.
+
+Note that `parquet` uses a duplicate-detection backend that differs slightly from
+pairtools by design (roughly 3 rows per million); set `pairtools.dedup_backend: scipy`
+for bit-exact parity. See `benchmarking/README.md`.
+
+### Benchmarking
+
+`benchmarking/run_benchmark.sh` runs the workflow both ways on the same input, into
+separate working directories, and `benchmarking/compare.py` /
+`benchmarking/compare_outputs.py` compare the timings and the results:
+
+```
+benchmarking/run_benchmark.sh -c 16 -f config/benchmark_large.yml
+python benchmarking/compare.py bench
+python benchmarking/compare_outputs.py bench
+```
+
+See `benchmarking/README.md` for what to benchmark on and how to read the output.
+
 ### Customization
 
 To setup a new project, modify the file `config/config.yml`.

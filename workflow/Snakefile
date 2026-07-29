@@ -10,6 +10,11 @@ include: "rules/common.smk"
 
 # configfile: "config/config.yml"
 
+# The workflow is composed almost entirely out of shell pipes. Without pipefail a
+# failing upstream stage (e.g. pairtools parse) is masked by a succeeding downstream
+# stage (e.g. pairtools sort), and the rule exits 0 with truncated output.
+shell.prefix("set -eo pipefail; ")
+
 
 localrules:
     merge_stats_libraries_into_groups,
@@ -43,8 +48,52 @@ chromsizes_path = config["input"]["genome"].get(
 genomic_views = config.get("input", {}).get("genomic_views", {})
 keep_view_genomes = config.get("input", {}).get("keep_view_genomes", False)
 
+#####################################################################
+# Pairs-processing backend: 'pairtools' (text) or 'parquet' (columnar)
+#####################################################################
+PT_CFG = config.get("pairtools", {}) or {}
+PT_BACKEND = PT_CFG.get("backend", "pairtools")
+if PT_BACKEND not in ("pairtools", "parquet"):
+    raise ValueError(
+        f"Unknown pairtools backend: {PT_BACKEND!r}. "
+        "Set config['pairtools']['backend'] to 'pairtools' or 'parquet'."
+    )
+PARQUET = PT_BACKEND == "parquet"
 
-include: "rules/custom.smk"
+# The executable, and the on-disk format of every intermediate pairs file.
+PT = "pairtools_parquet" if PARQUET else "pairtools"
+PAIRS_EXT = "parquet" if PARQUET else "pairs.gz"
+PT_ENV = "envs/pairtools_parquet_cooler.yml" if PARQUET else "envs/pairtools_cooler.yml"
+
+# Parquet writes its footer last, so it cannot travel through a pipe. The Arrow IPC
+# *stream* format has no footer and can, so that is what we pipe between stages.
+# pairtools_parquet follows pairtools' convention: omitting -o writes to stdout and
+# omitting the input path reads stdin, with '-' saying either explicitly.
+STREAM_OUT = "-o -.arrow" if PARQUET else ""
+STREAM_IN = "-" if PARQUET else ""
+
+PT_MEM = f"--memory {PT_CFG['memory']}" if PARQUET and PT_CFG.get("memory") else ""
+PT_TMP = f"--tmpdir {PT_CFG['tmpdir']}" if PARQUET and PT_CFG.get("tmpdir") else ""
+PT_DEDUP_BACKEND = PT_CFG.get("dedup_backend", "duckdb")
+if PARQUET and PT_DEDUP_BACKEND not in ("duckdb", "scipy", "sklearn"):
+    raise ValueError(
+        f"Unknown dedup backend: {PT_DEDUP_BACKEND!r}. "
+        "pairtools_parquet supports 'duckdb', 'scipy' and 'sklearn' "
+        "(pairtools' 'cython' backend is not available)."
+    )
+if PARQUET and "--backend cython" in config.get("dedup", {}).get("dedup_options", ""):
+    raise ValueError(
+        "pairtools_parquet does not implement the 'cython' dedup backend. "
+        "Use config['pairtools']['dedup_backend'] ('duckdb', 'scipy' or 'sklearn') "
+        "instead of passing --backend in dedup_options."
+    )
+export_text_pairs = PARQUET and PT_CFG.get("export_text_pairs", False)
+
+
+# Optional user-provided rules. Absent by default.
+if (Path(workflow.basedir) / "rules" / "custom.smk").exists():
+
+    include: "rules/custom.smk"
 
 
 def get_library_assembly(library):
@@ -177,6 +226,15 @@ if config["parse"]["keep_unparsed_bams"]:
                 f"{mapped_parsed_sorted_chunks_folder}/{library}/{run}/{{chunk_id}}.{lib_asm}.bam",
                 chunk_id=chunk_ids,
             )
+
+# Optional bgzipped text export of the deduplicated library pairs (parquet backend only)
+library_text_pairs = []
+if export_text_pairs:
+    for library in LIBRARY_RUN_FASTQS.keys():
+        lib_asm = get_library_assembly(library)
+        library_text_pairs.append(
+            f"{pairs_library_folder}/{library}.{lib_asm}.nodups.pairs.gz"
+        )
 
 # Setting up scaling from pairs outputs if required
 library_scaling_pairs = []
@@ -313,6 +371,7 @@ rule default:
         library_coolers,
         library_hic,
         library_scaling_pairs,
+        library_text_pairs,
         # library_group_scaling_pairs,
         fastqc,
         multiqc,
@@ -674,18 +733,26 @@ if mapper == "chromap":
             reference=get_library_genome_path,
             idx=get_idx,
         output:
-            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.pairs.gz",
+            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.{PAIRS_EXT}",
         log:
             "logs/chromap/{library}.{run}.{chunk_id}.{assembly_name}.log",
         benchmark:
             "benchmarks/chromap/{library}.{run}.{chunk_id}.{assembly_name}.tsv"
         conda:
-            "envs/chromap.yml"
+            "envs/chromap_parquet.yml" if PARQUET else "envs/chromap.yml"
         threads: 8
         params:
             extra=config["map"].get("mapping_options", ""),
+            # chromap writes plain text .pairs on stdout. In parquet mode convert it
+            # straight from the stream, which also drops the bgzip pass.
+            encode=(
+                f"pairtools_parquet csv-to-parquet --nproc {{threads}} -o {{output}} -"
+                if PARQUET
+                else "bgzip > {output}"
+            ),
         shell:
-            # chromap doesn't output gzip files, so we need to pipe it to bgzip
+            # chromap doesn't output gzip files, so we need to encode its output
+            # ourselves (bgzip, or straight to parquet).
             # For some reason it doesn't work with low memory mode in combination with
             # snakemake, so we can't use the hic preset... Might cause a problem with
             # memory for large dataset!
@@ -694,7 +761,7 @@ if mapper == "chromap":
             chromap -e 4 -q 1 --split-alignment --pairs -x {input.idx} \
             -r {input.reference} -t {threads} {params.extra} \
             -1 {input.reads[0]} -2 {input.reads[1]} \
-            -o /dev/stdout 2>{log} | bgzip > {output}
+            -o /dev/stdout 2>{log} | {params.encode}
             """
 
 elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
@@ -805,13 +872,13 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
             bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.bam",
             chromsizes=get_library_chromsizes,
         output:
-            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.pairs.gz",
+            f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.{PAIRS_EXT}",
         log:
             "logs/parse_sort_chunks/{library}.{run}.{chunk_id}.{assembly_name}.log",
         benchmark:
             "benchmarks/parse_sort_chunks/{library}.{run}.{chunk_id}.{assembly_name}.tsv"
         conda:
-            "envs/pairtools_cooler.yml"
+            PT_ENV
         threads: 4
         params:
             # keep_bams_command=f"| tee >(samtools view -bS > {mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam)"
@@ -825,12 +892,16 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
             ),
             dropseq_flag=("--drop-seq" if config["parse"].get("drop_seq", True) else ""),
             parsing_options=config["parse"].get("parsing_options", ""),
+            pt=PT,
+            stream_out=STREAM_OUT,
+            stream_in=STREAM_IN,
+            mem_args=f"{PT_MEM} {PT_TMP}".strip(),
         shell:
             r"""
-            pairtools parse {params.dropsam_flag} {params.dropreadid_flag} {params.dropseq_flag} \
+            {params.pt} parse {params.dropsam_flag} {params.dropreadid_flag} {params.dropseq_flag} \
             {params.parsing_options} \
-            -c {input.chromsizes} {input.bam} \
-            | pairtools sort --nproc {threads} -o {output} \
+            -c {input.chromsizes} {params.stream_out} {input.bam} \
+            | {params.pt} sort --nproc {threads} {params.mem_args} -o {output} {params.stream_in} \
             >{log[0]} 2>&1
             """
 
@@ -846,7 +917,7 @@ def get_pair_chunks(wildcards):
     ).chunk_id
     lib_asm = get_library_assembly(wildcards.library)
     paths = expand(
-        f"{mapped_parsed_sorted_chunks_folder}/{wildcards.library}/{wildcards.run}/{{chunk_id}}.{lib_asm}.pairs.gz",
+        f"{mapped_parsed_sorted_chunks_folder}/{wildcards.library}/{wildcards.run}/{{chunk_id}}.{lib_asm}.{PAIRS_EXT}",
         chunk_id=chunk_ids,
     )
     return paths
@@ -856,17 +927,17 @@ rule merge_runs:
     input:
         get_pair_chunks,
     output:
-        f"{pairs_runs_folder}/{{library}}/{{run}}.{{assembly_name}}.pairs.gz",
+        f"{pairs_runs_folder}/{{library}}/{{run}}.{{assembly_name}}.{PAIRS_EXT}",
     log:
         "logs/merge_runs/{library}.{run}.{assembly_name}.log",
     benchmark:
         "benchmarks/merge_runs/{library}.{run}.{assembly_name}.tsv"
     conda:
-        "envs/pairtools_cooler.yml"
+        PT_ENV
     threads: 4
     params:
         command=lambda wildcards, input, threads, output: (
-            f"pairtools merge {input} --nproc {threads} -o {output}"
+            f"{PT} merge {input} --nproc {threads} {PT_MEM} {PT_TMP} -o {output}"
             if len(input) > 1
             else f"ln -srf {input} {output}"
         ),
@@ -876,111 +947,192 @@ rule merge_runs:
         """
 
 
-if config["parse"]["make_pairsam"]:
-    bytile_arg = (
-        "--keep-parent-id --output-bytile-stats {output[7]}"
-        if config["dedup"].get("save_by_tile_dups", False)
-        else ""
+make_pairsam = config["parse"]["make_pairsam"]
+save_bytile = config["dedup"].get("save_by_tile_dups", False)
+do_phase = config.get("phase", {}).get("do_phase", False)
+
+_lib_stem = f"{pairs_library_folder}/{{library}}.{{assembly_name}}"
+
+# Named outputs, so that the shell commands below never index into a positional list.
+# (The previous positional form wired --output-bytile-stats to the pairix index in the
+# make_pairsam branch.)
+merge_output = {
+    "nodups": f"{_lib_stem}.nodups.{PAIRS_EXT}",
+    "unmapped": f"{_lib_stem}.unmapped.{PAIRS_EXT}",
+    "dups": f"{_lib_stem}.dups.{PAIRS_EXT}",
+    "stats": f"{_lib_stem}.dedup.stats",
+}
+if make_pairsam:
+    merge_output["nodups_bam"] = f"{_lib_stem}.nodups.bam"
+    merge_output["unmapped_bam"] = f"{_lib_stem}.unmapped.bam"
+    merge_output["dups_bam"] = f"{_lib_stem}.dups.bam"
+    if PARQUET:
+        # dedup cannot write its three outputs into process substitutions when they
+        # are parquet (no seekable sink, and a >(…) fd path defeats the extension
+        # based format detection), so split runs afterwards over real files.
+        merge_output["nodups_pairsam"] = temp(f"{_lib_stem}.nodups.pairsam.parquet")
+        merge_output["unmapped_pairsam"] = temp(f"{_lib_stem}.unmapped.pairsam.parquet")
+        merge_output["dups_pairsam"] = temp(f"{_lib_stem}.dups.pairsam.parquet")
+if not PARQUET:
+    # Parquet cannot be bgzf-indexed, and nothing downstream of here reads a pairix
+    # index, so it is only produced on the text path.
+    merge_output["index"] = f"{_lib_stem}.nodups.pairs.gz.px2"
+if save_bytile:
+    merge_output["bytile"] = f"{_lib_stem}.by_tile_dups.txt"
+
+
+def _dedup_pipeline(input, threads):
+    """Everything piped into `dedup`, plus the input token `dedup` itself should read.
+
+    Returns (prefix, dedup_input). `prefix` is either '' or a chain of commands
+    ending in '| '. The first stage of the chain reads the input file(s); the rest
+    read the stream.
+    """
+    files = str(input)
+    side_nproc = max(1, threads - 1)
+    tag_mode = config.get("phase", {}).get("tag_mode", "XA")
+    suffixes = " ".join(config.get("phase", {}).get("suffixes", []))
+    stages = []
+
+    if PARQUET:
+        if len(input) > 1:
+            stages.append(
+                f"{PT} merge {{src}} --nproc {threads} --keep-first-header "
+                f"{PT_MEM} {PT_TMP} -o -.arrow"
+            )
+        if do_phase:
+            stages.append(
+                f"{PT} phase --tag-mode {tag_mode} --phase-suffixes {suffixes} "
+                f"-o -.arrow {{src}}"
+            )
+            stages.append(
+                f"{PT} sort --nproc {side_nproc} {PT_MEM} {PT_TMP} -o -.arrow {{src}}"
+            )
+    else:
+        if len(input) > 1:
+            stages.append(
+                f"pairtools merge {{src}} --nproc {threads} --keep-first-header"
+            )
+        else:
+            stages.append(f"bgzip -dc -@ {side_nproc} {{src}}")
+        if do_phase:
+            stages.append(
+                f"pairtools phase --tag-mode {tag_mode} --phase-suffixes {suffixes}"
+            )
+            stages.append(f"pairtools sort --nproc {side_nproc}")
+
+    if not stages:
+        # Parquet, a single run, no phasing: hand dedup the file. This skips both the
+        # decompression pass the text path needs and dedup's spooling of stdin to a
+        # temporary parquet file.
+        return "", files
+
+    rendered = [
+        stage.format(src=(files if i == 0 else STREAM_IN))
+        for i, stage in enumerate(stages)
+    ]
+    return " | ".join(rendered) + " | ", STREAM_IN
+
+
+# The dedup invocation itself, assembled at parse time.
+if make_pairsam and not PARQUET:
+    _dedup_outputs = (
+        "--output >( pairtools split "
+        "--output-pairs {output.nodups} --output-sam {output.nodups_bam} ) "
+        "--output-unmapped >( pairtools split "
+        "--output-pairs {output.unmapped} --output-sam {output.unmapped_bam} ) "
+        "--output-dups >( pairtools split "
+        "--output-pairs {output.dups} --output-sam {output.dups_bam} ) "
     )
-    dedup_command = """pairtools dedup {params.dedup_options} \
-        --max-mismatch {params.max_mismatch_bp} \
-        --mark-dups \
-        --output \
-            >( pairtools split \
-                --output-pairs {output[0]} \
-                --output-sam {output[1]} \
-             ) \
-        --output-unmapped \
-            >( pairtools split \
-                --output-pairs {output[2]} \
-                --output-sam {output[3]} \
-             ) \
-        --output-dups \
-            >( pairtools split \
-                --output-pairs {output[4]} \
-                --output-sam {output[5]} \
-             ) \
-        --output-stats {output[6]} \
-        """ + bytile_arg + " && pairix {output[0]}"
-    merge_output = multiext(
-        f"{pairs_library_folder}/{{library}}.{{assembly_name}}",
-        ".nodups.pairs.gz",
-        ".nodups.bam",
-        ".unmapped.pairs.gz",
-        ".unmapped.bam",
-        ".dups.pairs.gz",
-        ".dups.bam",
-        ".dedup.stats",
-        ".nodups.pairs.gz.px2",
+elif make_pairsam and PARQUET:
+    _dedup_outputs = (
+        "--output {output.nodups_pairsam} "
+        "--output-unmapped {output.unmapped_pairsam} "
+        "--output-dups {output.dups_pairsam} "
     )
 else:
-    bytile_arg = (
-        "--keep-parent-id --output-bytile-stats {output[5]}"
-        if config["dedup"].get("save_by_tile_dups", False)
-        else ""
+    _dedup_outputs = (
+        "--output {output.nodups} "
+        "--output-unmapped {output.unmapped} "
+        "--output-dups {output.dups} "
     )
-    dedup_command = """pairtools dedup {params.dedup_options} \
-        --max-mismatch {params.max_mismatch_bp} \
-        --mark-dups \
-        --output {output[0]} \
-        --output-unmapped {output[1]} \
-        --output-dups {output[2]} \
-        --output-stats {output[3]} \
-        """ + bytile_arg + " >{log[0]} 2>&1 && pairix {output[0]}"
-    merge_output = multiext(
-        f"{pairs_library_folder}/{{library}}.{{assembly_name}}",
-        ".nodups.pairs.gz",
-        ".unmapped.pairs.gz",
-        ".dups.pairs.gz",
-        ".dedup.stats",
-        ".nodups.pairs.gz.px2",
-    )
-if config["dedup"].get("save_by_tile_dups", False):
-    merge_output += [
-        f"{pairs_library_folder}/{{library}}.{{assembly_name}}.by_tile_dups.txt"
-    ]
+
+_bytile_arg = (
+    "--keep-parent-id --output-bytile-stats {output.bytile} " if save_bytile else ""
+)
+_backend_arg = (
+    f"--backend {PT_DEDUP_BACKEND} -p {{threads}} {PT_MEM} {PT_TMP} " if PARQUET else ""
+)
+
+dedup_command = (
+    "{params.pt} dedup {params.dedup_options} "
+    "--max-mismatch {params.max_mismatch_bp} "
+    "--mark-dups "
+    + _backend_arg
+    + _dedup_outputs
+    + "--output-stats {output.stats} "
+    + _bytile_arg
+    + "{params.dedup_input}"
+)
+
+# Anything that has to happen after dedup.
+_post_commands = []
+if make_pairsam and PARQUET:
+    for _kind in ("nodups", "unmapped", "dups"):
+        _post_commands.append(
+            f"{PT} split --output-pairs {{output.{_kind}}} "
+            f"--output-sam {{output.{_kind}_bam}} {{output.{_kind}_pairsam}}"
+        )
+if not PARQUET:
+    _post_commands.append("pairix {output.nodups}")
+
+merge_dedup_command = dedup_command + " >{log[0]} 2>&1"
+for _cmd in _post_commands:
+    merge_dedup_command += f" && {_cmd} >>{{log[0]}} 2>&1"
 
 
 rule merge_dedup:
     input:
         pairs=lambda wildcards: expand(
-            f"{pairs_runs_folder}/{wildcards.library}/{{run}}.{wildcards.assembly_name}.pairs.gz",
+            f"{pairs_runs_folder}/{wildcards.library}/{{run}}.{wildcards.assembly_name}.{PAIRS_EXT}",
             run=list(LIBRARY_RUN_FASTQS[wildcards.library].keys()),
         ),
     output:
-        merge_output,
+        **merge_output,
     log:
         "logs/merge_dedup/{library}.{assembly_name}.log",
     benchmark:
         "benchmarks/merge_dedup/{library}.{assembly_name}.tsv"
     conda:
-        "envs/pairtools_cooler.yml"
+        PT_ENV
     threads: 4
     params:
+        pt=PT,
         dedup_options=lambda wildcards: config["dedup"].get("dedup_options", ""),
         max_mismatch_bp=config["dedup"]["max_mismatch_bp"],
-        merge_command=lambda wildcards, input, threads: (
-            f"pairtools merge {input} --nproc {threads} --keep-first-header | "
-            if len(input) > 1
-            else f"bgzip -dc -@ {threads-1} {input} | "
-        ),
-        phase_command=lambda wildcards, threads: (
-            f'pairtools phase --tag-mode {config["phase"]["tag_mode"]} --phase-suffixes {" ".join(config["phase"]["suffixes"])} | pairtools sort --nproc {threads-1} | '
-            if config.get("phase", {}).get("do_phase", False)
-            else ""
-        ),
+        pipeline=lambda wildcards, input, threads: _dedup_pipeline(input, threads)[0],
+        dedup_input=lambda wildcards, input, threads: _dedup_pipeline(input, threads)[1],
     shell:
-        (
-            r"{params.merge_command}"
-            + r"{params.phase_command}"
-            + dedup_command
-            + " >{log[0]} 2>&1"
-        )
+        r"{params.pipeline}" + merge_dedup_command
+
+
+def _cload_source(wildcards, input, threads):
+    """Command emitting text .pairs on stdout for `cooler cload` to consume."""
+    expression = config["bin"]["filters"][wildcards.filter_name]
+    if PARQUET:
+        # Omitting -o makes pairtools_parquet write text to stdout.
+        if expression:
+            return f'{PT} select "{expression}" {input.pairs}'
+        return f"{PT} parquet-to-csv --nproc {threads} {input.pairs}"
+    decompress = f"bgzip -dc -@ {max(1, threads - 1)} {input.pairs}"
+    if expression:
+        return f'{decompress} | pairtools select "{expression}"'
+    return decompress
 
 
 rule bin_pairs_library:
     input:
-        pairs=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.pairs.gz",
+        pairs=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.{PAIRS_EXT}",
         chromsizes=get_library_chromsizes,
     output:
         cool=f"{coolers_library_folder}/{{library}}.{{assembly_name}}.{{filter_name}}.{{min_resolution}}.cool",
@@ -989,18 +1141,13 @@ rule bin_pairs_library:
     benchmark:
         "benchmarks/bin_pairs_library/{library}.{assembly_name}.{filter_name}.{min_resolution}.tsv"
     conda:
-        "envs/pairtools_cooler.yml"
+        PT_ENV
     threads: 4
     params:
-        filter_command=lambda wildcards: (
-            f'| pairtools select "{config["bin"]["filters"][wildcards.filter_name]}"'
-            if config["bin"]["filters"][wildcards.filter_name]
-            else ""
-        ),
-        bgzip_threads=lambda wildcards, threads: max(1, (threads - 1)),
+        source=_cload_source,
     shell:
         r"""
-        bgzip -dc -@ {params.bgzip_threads} {input.pairs} {params.filter_command} | cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 \
+        {params.source} | cooler cload pairs -c1 2 -p1 3 -c2 4 -p2 5 \
         --assembly {wildcards.assembly_name} \
         {input.chromsizes}:{wildcards.min_resolution} - {output.cool} >{log[0]} 2>&1
         """
@@ -1016,7 +1163,7 @@ rule zoom_library:
     benchmark:
         "benchmarks/zoom_library/{library}.{assembly_name}.{filter_name}.{min_resolution}.tsv"
     conda:
-        "envs/pairtools_cooler.yml"
+        "envs/cooler.yml"
     threads: 8
     params:
         balance_args=lambda wildcards, threads: (
@@ -1050,7 +1197,7 @@ rule merge_zoom_library_group_coolers:
     benchmark:
         "benchmarks/merge_zoom_library_group_coolers/{library_group}.{assembly_name}.{filter_name}.{min_resolution}.tsv"
     conda:
-        "envs/pairtools_cooler.yml"
+        "envs/cooler.yml"
     threads: 8
     params:
         balance_args=lambda wildcards, threads: (
@@ -1106,7 +1253,7 @@ use rule mcool2hic_group as mcool2hic_library with:
 
 rule scaling_pairs_library:
     input:
-        pairs=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.pairs.gz",
+        pairs=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.{PAIRS_EXT}",
         chromsizes=get_library_chromsizes,
     output:
         scaling=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.scaling.tsv",
@@ -1115,7 +1262,7 @@ rule scaling_pairs_library:
     benchmark:
         "benchmarks/scaling_pairs_library/{library}.{assembly_name}.tsv"
     conda:
-        "envs/pairtools_cooler.yml"
+        PT_ENV
     threads: 4
     params:
         min_distance=config["scaling_pairs"].get("min_distance", 0),
@@ -1128,9 +1275,10 @@ rule scaling_pairs_library:
         ),
         n_dist_bins_decade=config["scaling_pairs"].get("n_dist_bins_decade", 10),
         extra=config["scaling_pairs"].get("scaling_options", ""),
+        pt=PT,
     shell:
         r"""
-        pairtools scaling \
+        {params.pt} scaling \
         --dist-range {params.min_distance} {params.max_distance} \
         --n-dist-bins-decade {params.n_dist_bins_decade} \
         {params.extra} \
@@ -1138,6 +1286,33 @@ rule scaling_pairs_library:
         {input.pairs} \
         >{log[0]} 2>&1
         """
+
+
+if export_text_pairs:
+
+    rule export_text_pairs:
+        input:
+            pairs=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.parquet",
+        output:
+            pairs=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.pairs.gz",
+            index=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.pairs.gz.px2",
+        log:
+            "logs/export_text_pairs/{library}.{assembly_name}.log",
+        benchmark:
+            "benchmarks/export_text_pairs/{library}.{assembly_name}.tsv"
+        conda:
+            PT_ENV
+        threads: 4
+        params:
+            pt=PT,
+        shell:
+            # parquet-to-csv's own .gz is pigz, not bgzf, so pairix could not index
+            # it. Pipe through real bgzip instead.
+            r"""
+            {params.pt} parquet-to-csv --nproc {threads} {input.pairs} \
+            2>{log[0]} | bgzip -@ {threads} > {output.pairs}
+            pairix {output.pairs} >>{log[0]} 2>&1
+            """
 
 
 # use rule scaling_pairs_library as scaling_pairs_library_group with:
@@ -1163,9 +1338,11 @@ rule merge_stats_libraries_into_groups:
     log:
         "logs/merge_stats_libraries_into_groups/{library_group}.{assembly_name}.log",
     conda:
-        "envs/pairtools_cooler.yml"
+        PT_ENV
+    params:
+        pt=PT,
     shell:
-        r"pairtools stats --merge {input} -o {output} >{log[0]} 2>&1"
+        r"{params.pt} stats --merge {input} -o {output} >{log[0]} 2>&1"
 
 
 rule multiqc:
