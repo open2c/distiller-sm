@@ -36,6 +36,30 @@ Useful flags:
 | `-a, --arm NAME` | run only one arm |
 | `-- ...` | everything after `--` is passed to snakemake |
 
+### `--cores` has a floor
+
+Mapping is piped straight into parsing (`map_chunks_* | parse_sort_chunks`, via
+snakemake's `pipe()`), and snakemake **sums** the threads of every member of a pipe
+group. So `--cores` must be at least the mapping rule's threads plus
+`parse_sort_chunks`' threads, or the run dies before executing anything:
+
+```
+WorkflowError: Error grouping resources in group '...':
+Not enough resources were provided. ... Excess Resources: _cores: 8/4
+```
+
+`workflow/profiles/default/config.yaml` gives `map_chunks_bwa` 8 threads and
+`parse_sort_chunks` 4, so the default profile needs `-c 12`. On a smaller machine,
+lower both:
+
+```sh
+benchmarking/run_benchmark.sh -c 4 -f config/benchmark_synthetic.yml \
+    -- --set-threads map_chunks_bwa=2 parse_sort_chunks=2
+```
+
+Keep the thread counts identical across the two arms — they are what is being
+compared.
+
 Then:
 
 ```sh
@@ -106,6 +130,33 @@ pairtools:
 at the cost of most of dedup's speedup. `--max-mismatch 0` (this repo's default
 `dedup.max_mismatch_bp`) takes a separate, order-independent code path that upstream
 measures at 8.8x.
+
+## A pairtools bug the baseline arm needs patched
+
+`pairtools/lib/fileio.py` probes bgzip with
+
+```python
+subprocess.Popen(shlex.split('bgzip --version'), stderr=subprocess.PIPE, text=True)
+```
+
+capturing stderr but not stdout — and bgzip prints its version banner to *stdout*,
+which the subprocess inherits. So any pairtools command that reads a `.gz` input and
+writes pairs to stdout emits
+
+```
+bgzip (htslib) 1.24
+Copyright (C) 2026 Genome Research Ltd.
+```
+
+ahead of the pairs header. In this workflow that is
+`pairtools merge <run>.pairs.gz ... | pairtools dedup ...` in `merge_dedup`, so every
+library with **more than one run** fails with `Input file is not valid .pairs, has no
+header or is empty`. Single-run libraries are unaffected, because there pairtools
+writes to a file with `-o` and the banner only reaches the rule's log.
+
+`workflow/envs/pairtools_cooler.post-deploy.sh` patches this at environment-creation
+time (adding `stdout=subprocess.DEVNULL` to the probe). The patch is a no-op once
+upstream fixes it. The parquet backend does not go through this code path.
 
 Note that merged group stats are compared as key → value maps, never byte-diffed:
 `pairtools stats --merge` has a non-reproducible line order upstream, so the two arms
