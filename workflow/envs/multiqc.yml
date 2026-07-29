@@ -6,4 +6,4 @@ channels:
 dependencies:
   - python>=3.10
   - pip:
-    - https://github.com/open2c/MultiQC/archive/refs/heads/pairtools-module.zip
+    - git+https://github.com/open2c/MultiQC@pairtools-module

@@ -1,0 +1,25 @@
+name: pairtools_parquet_cooler_env
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python>=3.10
+  - pip
+  - cooler>=0.10.2
+  - pairix
+  - htslib
+  # pysam >=0.24 segfaults in `parse --drop-seq` / `--add-columns seq` (an ABI
+  # mismatch with pairtools' compiled AlignedSegmentPairtoolized). This hits
+  # pairtools' own parse too, and config/config.yml sets drop_seq: True by default.
+  - pysam<0.24
+  - pyarrow>=17.0.0
+  - duckdb>=1.4.1
+  - bioframe
+  # Build dependencies for pairtools' Cython extension. See the post-deploy script:
+  # pairtools has to be compiled against the pysam in this environment, so it is
+  # installed there with --no-build-isolation rather than from a `pip:` section here.
+  - cython
+  - numpy
+  - setuptools
+  - wheel

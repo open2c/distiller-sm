@@ -1,0 +1,19 @@
+name: chromap_parquet_env
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python>=3.10
+  - pip
+  - chromap
+  - htslib
+  - pysam<0.24
+  - pyarrow>=17.0.0
+  - duckdb>=1.4.1
+  - bioframe
+  # Build dependencies for pairtools' Cython extension; see the post-deploy script.
+  - cython
+  - numpy
+  - setuptools
+  - wheel

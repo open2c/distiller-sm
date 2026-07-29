@@ -4,8 +4,20 @@ channels:
   - bioconda
   - nodefaults
 dependencies:
-  - python>=3.8
+  - python>=3.10
+  - pip
   # - pairtools>=1.1.0
   - cooler>=0.10.2
-  - pip:
-    - https://github.com/open2c/pairtools/archive/refs/heads/fix-scaling.zip
+  # merge_dedup indexes its output with pairix, and both merge_dedup and
+  # bin_pairs_library shell out to bgzip.
+  - pairix
+  - htslib
+  # pysam >=0.24 segfaults in `pairtools parse --drop-seq` / `--add-columns seq`,
+  # and config/config.yml sets drop_seq: True by default.
+  - pysam<0.24
+  - bioframe
+  # Build dependencies for pairtools' Cython extension; see the post-deploy script.
+  - cython
+  - numpy
+  - setuptools
+  - wheel
