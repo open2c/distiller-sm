@@ -93,8 +93,8 @@ def compare_stats(a_path, b_path, label):
 # --------------------------------------------------------------------------- pairs
 
 
-def read_pairs_rows(path, converter_env=None):
-    """Return the set of body rows of a .pairs.gz / .parquet file, and the row count.
+def read_pairs(path, converter_env=None):
+    """Return (body rows, column names) of a .pairs.gz / .parquet file.
 
     Parquet is converted to text with `pairtools_parquet parquet-to-csv` so both arms
     are compared in the same representation.
@@ -108,30 +108,77 @@ def read_pairs_rows(path, converter_env=None):
     else:
         with gzip.open(path, "rt") as handle:
             text = handle.read()
-    rows = [line for line in text.splitlines() if line and not line.startswith("#")]
-    return rows
+
+    columns = []
+    rows = []
+    for line in text.splitlines():
+        if not line:
+            continue
+        if line.startswith("#"):
+            if line.startswith("#columns:"):
+                columns = line.split(":", 1)[1].split()
+            continue
+        rows.append(line)
+    return rows, columns
+
+
+# Columns that identify the read rather than the contact. Dedup is free to keep a
+# different member of a duplicate family, which changes these and nothing else.
+READ_ID_COLUMNS = {"readID", "parent_readID"}
+
+
+def strip_read_ids(rows, columns):
+    """Drop the readID-ish columns so only the contact itself is compared."""
+    if not columns:
+        return rows
+    keep = [i for i, name in enumerate(columns) if name not in READ_ID_COLUMNS]
+    if len(keep) == len(columns):
+        return rows
+    out = []
+    for row in rows:
+        fields = row.split("\t")
+        out.append("\t".join(fields[i] for i in keep if i < len(fields)))
+    return out
 
 
 def compare_pairs(a_path, b_path, label, tolerance, converter_env):
     try:
-        a_rows = read_pairs_rows(a_path, converter_env)
-        b_rows = read_pairs_rows(b_path, converter_env)
+        a_rows, a_cols = read_pairs(a_path, converter_env)
+        b_rows, b_cols = read_pairs(b_path, converter_env)
     except (subprocess.CalledProcessError, OSError) as exc:
         fail(f"{label}: could not read pairs ({exc})")
         return
 
-    a_set, b_set = set(a_rows), set(b_rows)
-    only_a = len(a_set - b_set)
-    only_b = len(b_set - a_set)
-    total = max(len(a_rows), 1)
-
-    if only_a == 0 and only_b == 0 and len(a_rows) == len(b_rows):
-        ok(f"{label}: {len(a_rows)} rows, identical")
+    if a_cols != b_cols:
+        fail(f"{label}: columns differ ({a_cols} vs {b_cols})")
         return
 
+    total = max(len(a_rows), 1)
+
+    # The contact itself -- everything except which read of a duplicate family
+    # happened to be kept. This is what has to agree.
+    a_contacts = set(strip_read_ids(a_rows, a_cols))
+    b_contacts = set(strip_read_ids(b_rows, b_cols))
+    only_a = len(a_contacts - b_contacts)
+    only_b = len(b_contacts - a_contacts)
     fraction = (only_a + only_b) / total
+
+    if only_a == 0 and only_b == 0 and len(a_rows) == len(b_rows):
+        # Same contacts, same count. Whole rows may still differ if dedup kept a
+        # different member of a duplicate family, which is expected and harmless.
+        differing_ids = len(set(a_rows) - set(b_rows))
+        if differing_ids:
+            ok(
+                f"{label}: {len(a_rows)} rows, contacts identical "
+                f"({differing_ids} differ only in readID -- dedup kept a different "
+                f"member of the duplicate family)"
+            )
+        else:
+            ok(f"{label}: {len(a_rows)} rows, identical")
+        return
+
     message = (
-        f"{label}: {len(a_rows)} vs {len(b_rows)} rows; "
+        f"{label}: {len(a_rows)} vs {len(b_rows)} rows; contacts differ -- "
         f"{only_a} only in baseline, {only_b} only in candidate "
         f"({fraction:.2e} of total)"
     )
