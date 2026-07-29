@@ -101,11 +101,17 @@ into its timings.
 heavy rule, and prints wall time per rule for both arms with the speedup. It also
 prints the total from `/usr/bin/time -v` around each `snakemake` invocation, which
 includes scheduling overhead the per-rule TSVs miss, and the on-disk size of the
-pairs intermediates — parquet's storage footprint is a real secondary benefit.
+pairs intermediates.
 
 Expect the win to be concentrated in `merge_dedup` and `parse_sort_chunks`.
 `parse` itself is not faster (it is pysam-bound); what the parquet backend removes
 is the text serialisation between stages.
+
+On the on-disk numbers: parquet carries per-file overhead (schema, key/value
+metadata, row-group footers), so on tiny files it comes out *larger* than bgzipped
+text — on the synthetic fixture it is about 1.6x bigger. Whether it wins on your
+data depends on how big the files are and how compressible the columns are, so
+treat that row as something to measure rather than something to assume.
 
 ## Expect a small difference in dedup output
 
@@ -130,6 +136,23 @@ pairtools:
 at the cost of most of dedup's speedup. `--max-mismatch 0` (this repo's default
 `dedup.max_mismatch_bp`) takes a separate, order-independent code path that upstream
 measures at 8.8x.
+
+## Two upstream quirks the workflow works around
+
+**`pairtools_parquet scaling` ignores the header's chromsizes.** It emits `end=-1`
+for every region and therefore `n_bp2=0` — and `n_bp2` is the area P(s) is
+normalised by. `n_pairs` is unaffected. This is not a parquet-format problem; it
+reproduces with text input too. `scaling_pairs_library` therefore builds a view
+from the chromsizes file and passes `--view`, which reproduces `pairtools scaling`
+exactly. Drop it once this is fixed upstream.
+
+**Dedup keeps a different representative.** With `duckdb`, the pairs that survive
+deduplication are the same *contacts* as pairtools produces, but the surviving row
+of each duplicate family can be a different read. So whole-line diffs of
+`.nodups` show a large fraction of rows differing while the coolers are
+pixel-identical. `compare_outputs.py` compares the contact columns for pass/fail
+and reports readID-only differences separately. It also shows up as a small
+difference in `dups_by_tile_median`, which depends on which read IDs survive.
 
 ## A pairtools bug the baseline arm needs patched
 

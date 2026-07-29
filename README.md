@@ -41,10 +41,10 @@ with either of two implementations, selected by `pairtools.backend` in the confi
   (`.pairs.gz`) and the deduplicated library pairs get a `pairix` index.
 - `parquet` — [`pairtools_parquet`](https://github.com/Phlya/pairtools_parquet).
   Intermediate pairs are stored as `.parquet` and streamed between steps as Arrow IPC,
-  so nothing is serialised to text along the way. Substantially faster, particularly
-  for dedup and sort, and the intermediates are smaller on disk. No `pairix` index is
-  produced — parquet cannot be bgzf-indexed, and nothing downstream needs one. Text
-  `.pairs.gz` can still be exported with `pairtools.export_text_pairs: True`.
+  so nothing is serialised to text along the way. Substantially faster on real-sized
+  data, particularly for dedup and sort. No `pairix` index is produced — parquet
+  cannot be bgzf-indexed, and nothing downstream needs one. Text `.pairs.gz` can still
+  be exported with `pairtools.export_text_pairs: True`.
 
 Note that `parquet` uses a duplicate-detection backend that differs slightly from
 pairtools by design (roughly 3 rows per million); set `pairtools.dedup_backend: scipy`

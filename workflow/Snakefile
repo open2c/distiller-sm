@@ -1251,26 +1251,12 @@ use rule mcool2hic_group as mcool2hic_library with:
         r"benchmarks/mcool2hic/{library}.{assembly_name}.{filter_name}.{min_resolution}.tsv"
 
 
-scaling_output = {
-    "scaling": f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.scaling.tsv"
-}
-if PARQUET:
-    # `pairtools_parquet scaling` does not build its default view from the
-    # #chromsize: header lines the way `pairtools scaling` does: it emits end=-1 for
-    # every region and therefore n_bp2=0, which is the area P(s) is normalised by.
-    # n_pairs is unaffected. Passing an explicit --view built from the chromsizes
-    # reproduces `pairtools scaling` exactly. Harmless to drop once fixed upstream.
-    scaling_output["view"] = temp(
-        f"{pairs_library_folder}/{{library}}.{{assembly_name}}.scaling_view.tsv"
-    )
-
-
 rule scaling_pairs_library:
     input:
         pairs=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.{PAIRS_EXT}",
         chromsizes=get_library_chromsizes,
     output:
-        **scaling_output,
+        scaling=f"{pairs_library_folder}/{{library}}.{{assembly_name}}.nodups.scaling.tsv",
     log:
         "logs/scaling_pairs_library/{library}.{assembly_name}.log",
     benchmark:
@@ -1289,26 +1275,32 @@ rule scaling_pairs_library:
         ),
         n_dist_bins_decade=config["scaling_pairs"].get("n_dist_bins_decade", 10),
         extra=config["scaling_pairs"].get("scaling_options", ""),
-        pt=PT,
-        make_view=lambda wildcards, input, output: (
-            "awk -v OFS='\\t' 'BEGIN{print \"chrom\",\"start\",\"end\",\"name\"} "
-            f"{{print $1,0,$2,$1}}' {input.chromsizes} > {output.view}"
+        # `pairtools_parquet scaling` does not build its default view from the
+        # #chromsize: header lines the way `pairtools scaling` does. It emits end=-1
+        # for every region and therefore n_bp2=0 -- and n_bp2 is the area P(s) is
+        # normalised by, so the output is unusable without it. This is not a parquet
+        # problem: it reproduces with text input too. Passing an explicit --view
+        # built from the chromsizes fixes n_bp2, but also changes n_pairs (pairtools
+        # itself counts differently with a view than without: 15631 vs 17044 on the
+        # test data), so it does not reproduce the current output either.
+        #
+        # Until that is fixed upstream, convert to text and use pairtools' own
+        # scaling, which is byte-identical to the text backend. Scaling is a cheap
+        # step, so the conversion costs little.
+        source=lambda wildcards, input, threads: (
+            f"{PT} parquet-to-csv --nproc {threads} {input.pairs} | pairtools"
             if PARQUET
-            else "true"
+            else "pairtools"
         ),
-        view_arg=lambda wildcards, output: (
-            f"--view {output.view}" if PARQUET else ""
-        ),
+        pairs_arg=lambda wildcards, input: "-" if PARQUET else str(input.pairs),
     shell:
         r"""
-        {params.make_view}
-        {params.pt} scaling \
+        {params.source} scaling \
         --dist-range {params.min_distance} {params.max_distance} \
         --n-dist-bins-decade {params.n_dist_bins_decade} \
-        {params.view_arg} \
         {params.extra} \
         -o {output.scaling} \
-        {input.pairs} \
+        {params.pairs_arg} \
         >{log[0]} 2>&1
         """
 

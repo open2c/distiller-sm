@@ -28,7 +28,7 @@ with one of two interchangeable implementations, chosen by `pairtools.backend`:
   the deduplicated library pairs are indexed with `pairix`.
 - `parquet`: [`pairtools_parquet`](https://github.com/Phlya/pairtools_parquet).
   Intermediates are `.parquet` and are streamed between steps as Arrow IPC, so the data
-  is never serialised to text in between. Faster, and smaller on disk.
+  is never serialised to text in between.
 
 Only the intermediate format changes; the coolers, `.dedup.stats`, scaling tables and
 MultiQC report are the same either way, and the `bin.filters` expressions are the same
