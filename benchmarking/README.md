@@ -141,10 +141,16 @@ measures at 8.8x.
 
 **`pairtools_parquet scaling` ignores the header's chromsizes.** It emits `end=-1`
 for every region and therefore `n_bp2=0` — and `n_bp2` is the area P(s) is
-normalised by. `n_pairs` is unaffected. This is not a parquet-format problem; it
-reproduces with text input too. `scaling_pairs_library` therefore builds a view
-from the chromsizes file and passes `--view`, which reproduces `pairtools scaling`
-exactly. Drop it once this is fixed upstream.
+normalised by, so the output is unusable without it. This is not a parquet-format
+problem; it reproduces with text input too.
+
+Passing an explicit `--view` built from the chromsizes fixes `n_bp2`, but it also
+changes `n_pairs` — pairtools itself counts differently with a view than without
+(15631 vs 17044 on the synthetic fixture) — so that does not reproduce the text
+backend either. `scaling_pairs_library` therefore converts to text and runs
+`pairtools scaling`, which is byte-identical to the text arm. Scaling is a cheap
+step, so the conversion costs little. Drop it — and pick up the speedup — once this
+is fixed upstream.
 
 **Dedup keeps a different representative.** With `duckdb`, the pairs that survive
 deduplication are the same *contacts* as pairtools produces, but the surviving row
