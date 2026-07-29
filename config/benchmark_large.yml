@@ -1,0 +1,125 @@
+#########################################################################
+# Config for a timing-focused A/B benchmark.
+#
+#   sh setup_test.sh                # for the sacCer3 reference
+#   benchmarking/run_benchmark.sh -c 16 -f config/benchmark_large.yml
+#
+# The bundled test data (4 x 100k reads) is far too small to time: every rule
+# finishes in seconds and the numbers are dominated by process startup. This
+# config pulls much deeper slices of the same SRA accessions through the
+# workflow's existing `sra:` download path, so the pairs steps get enough work
+# to be measurable.
+#
+# sacCer3 is a 12 Mb genome, so deep sequencing gives a high duplicate rate --
+# which is exactly what stresses dedup, the step with the largest expected win.
+#
+# Adjust `end=` to taste: 20M reads per run is roughly 30-60 minutes of mapping
+# on 16 cores. For a representative measurement of your own workloads, point
+# `raw_reads_paths` at your own data instead.
+#########################################################################
+
+input:
+    raw_reads_paths:
+        MATalpha_R1:
+            lane1:
+                - sra:SRR2601842?start=0&end=20000000
+            lane2:
+                - sra:SRR2601843?start=0&end=20000000
+        MATalpha_R2:
+            lane1:
+                - sra:SRR2601845?start=0&end=20000000
+        MATa_R1:
+            lane1:
+                - sra:SRR2601848?start=0&end=20000000
+        MATa_R2:
+            lane1:
+                - sra:SRR2601851?start=0&end=20000000
+
+    library_groups:
+        MATalpha:
+            - MATalpha_R1
+            - MATalpha_R2
+        MATa:
+            - MATa_R1
+            - MATa_R2
+        all:
+            - MATa_R1
+            - MATa_R2
+            - MATalpha_R1
+            - MATalpha_R2
+
+    truncate_fastq_reads: 0
+
+    genome:
+        assembly_name: 'sacCer3'
+        bwa_index_wildcard_path: 'test/genome/sacCer3.fa.gz*'
+        chrom_sizes_path: 'test/genome/sacCer3.chrom.sizes'
+
+do_fastqc: False
+
+map:
+    mapper: 'bwa-mem2'
+    # Chunking multiplies the number of parse|sort pipes and gives merge_runs real
+    # work to do. Set to 0 to map each run in one go instead.
+    chunksize: 10000000
+    mapping_options: ''
+    trim_options: ''
+    use_custom_split: True
+
+pairtools:
+    backend: 'parquet'
+    dedup_backend: 'duckdb'
+    memory: '8G'
+    tmpdir: ''
+    export_text_pairs: False
+
+parse:
+    make_pairsam: False
+    drop_seq: True
+    drop_readid: False
+    keep_unparsed_bams: False
+    parsing_options: '--add-columns mapq --walks-policy 5unique'
+
+phase:
+    do_phase: False
+    tag_mode: XA
+    suffixes:
+        - _cast
+        - _129
+
+dedup:
+    max_mismatch_bp: 0
+    save_by_tile_dups: True
+    dedup_options: ""
+
+scaling_pairs:
+    do_scaling: True
+    min_distance: 10
+    max_distance: False
+    n_dist_bins_decade: 10
+    scaling_options: ''
+
+bin:
+    resolutions: "4DN"
+    balance: False
+    filters:
+        mapq_30: '(mapq1>=30) and (mapq2>=30)'
+    make_hic: False
+
+output:
+    dirs:
+        downloaded_fastqs: 'inputs/fastq/downloaded_fastqs'
+        fastqc: 'results/fastqc'
+        processed_fastqs: 'results/processed_fastqs'
+        mapped_parsed_sorted_chunks: 'results/mapped_parsed_sorted_chunks'
+        pairs_runs: 'results/pairs_runs'
+        pairs_library: 'results/pairs_library'
+        coolers_library: 'results/coolers_library'
+        coolers_library_group: 'results/coolers_library_group'
+        stats_library_group: 'results/stats_library_group'
+        multiqc: 'results/multiqc'
+
+resgen:
+    upload: False
+    user: username_here
+    project: project_name_here

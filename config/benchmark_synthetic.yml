@@ -1,0 +1,114 @@
+#########################################################################
+# Config for an offline A/B benchmark run on synthetic data.
+#
+#   python benchmarking/make_synthetic_test_data.py --outdir test
+#   benchmarking/run_benchmark.sh -c 4 -f config/benchmark_synthetic.yml
+#
+# Differs from config/config.yml in that it needs no network access: the
+# genome and reads are generated locally, so there is no SRA run and no
+# downloaded reference. Use it to check that the two backends agree, not to
+# measure realistic timings -- the reads carry no real Hi-C structure.
+#########################################################################
+
+input:
+    raw_reads_paths:
+        MATalpha_R1:
+            lane1:
+                - test/fastq/MATalpha_R1/lane1/SRR2601842_1.fastq.gz
+                - test/fastq/MATalpha_R1/lane1/SRR2601842_2.fastq.gz
+            # A second run, so that merge_dedup exercises the `merge | dedup`
+            # path in addition to the single-run path.
+            lane2:
+                - test/fastq/MATalpha_R2/lane1/SRR2601845_1.fastq.gz
+                - test/fastq/MATalpha_R2/lane1/SRR2601845_2.fastq.gz
+        MATa_R1:
+            lane1:
+                - test/fastq/MATa_R1/lane1/SRR2601848_1.fastq.gz
+                - test/fastq/MATa_R1/lane1/SRR2601848_2.fastq.gz
+        MATa_R2:
+            lane1:
+                - test/fastq/MATa_R2/lane1/SRR2601851_1.fastq.gz
+                - test/fastq/MATa_R2/lane1/SRR2601851_2.fastq.gz
+
+    library_groups:
+        MATa:
+            - MATa_R1
+            - MATa_R2
+        all:
+            - MATa_R1
+            - MATa_R2
+            - MATalpha_R1
+
+    truncate_fastq_reads: 0
+
+    genome:
+        assembly_name: 'sacCer3'
+        bwa_index_wildcard_path: 'test/genome/sacCer3.fa.gz*'
+        chrom_sizes_path: 'test/genome/sacCer3.chrom.sizes'
+
+do_fastqc: False
+
+map:
+    mapper: 'bwa-mem'
+    chunksize: 0
+    mapping_options: ''
+    trim_options: ''
+    use_custom_split: True
+
+pairtools:
+    backend: 'parquet'
+    dedup_backend: 'duckdb'
+    memory: '2G'
+    tmpdir: ''
+    export_text_pairs: False
+
+parse:
+    make_pairsam: False
+    drop_seq: True
+    drop_readid: False
+    keep_unparsed_bams: False
+    parsing_options: '--add-columns mapq --walks-policy 5unique'
+
+phase:
+    do_phase: False
+    tag_mode: XA
+    suffixes:
+        - _cast
+        - _129
+
+dedup:
+    max_mismatch_bp: 0
+    save_by_tile_dups: True
+    dedup_options: ""
+
+scaling_pairs:
+    do_scaling: True
+    min_distance: 10
+    max_distance: False
+    n_dist_bins_decade: 10
+    scaling_options: ''
+
+bin:
+    resolutions: [1000, 2000, 4000, 8000]
+    balance: False
+    filters:
+        mapq_30: '(mapq1>=30) and (mapq2>=30)'
+    make_hic: False
+
+output:
+    dirs:
+        downloaded_fastqs: 'inputs/fastq/downloaded_fastqs'
+        fastqc: 'results/fastqc'
+        processed_fastqs: 'results/processed_fastqs'
+        mapped_parsed_sorted_chunks: 'results/mapped_parsed_sorted_chunks'
+        pairs_runs: 'results/pairs_runs'
+        pairs_library: 'results/pairs_library'
+        coolers_library: 'results/coolers_library'
+        coolers_library_group: 'results/coolers_library_group'
+        stats_library_group: 'results/stats_library_group'
+        multiqc: 'results/multiqc'
+
+resgen:
+    upload: False
+    user: username_here
+    project: project_name_here
