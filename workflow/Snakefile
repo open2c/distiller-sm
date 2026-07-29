@@ -1124,7 +1124,7 @@ def _cload_source(wildcards, input, threads):
         if expression:
             return f'{PT} select "{expression}" {input.pairs}'
         return f"{PT} parquet-to-csv --nproc {threads} {input.pairs}"
-    decompress = f"bgzip -dc -@ {max(1, threads - 1)} {input.pairs}"
+    decompress = f"bgzip -dc -@ {max(1, threads-1)} {input.pairs}"
     if expression:
         return f'{decompress} | pairtools select "{expression}"'
     return decompress
@@ -1163,7 +1163,7 @@ rule zoom_library:
     benchmark:
         "benchmarks/zoom_library/{library}.{assembly_name}.{filter_name}.{min_resolution}.tsv"
     conda:
-        "envs/cooler.yml"
+        PT_ENV
     threads: 8
     params:
         balance_args=lambda wildcards, threads: (
@@ -1197,7 +1197,7 @@ rule merge_zoom_library_group_coolers:
     benchmark:
         "benchmarks/merge_zoom_library_group_coolers/{library_group}.{assembly_name}.{filter_name}.{min_resolution}.tsv"
     conda:
-        "envs/cooler.yml"
+        PT_ENV
     threads: 8
     params:
         balance_args=lambda wildcards, threads: (

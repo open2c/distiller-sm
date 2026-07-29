@@ -70,8 +70,8 @@ do_fastqc: False
 
 # Control how reads are mapped to the reference genomes.
 map:
-    mapper: 'bwa-mem3' 
-    #available: 'bwa-mem', 'bwa-mem2', 'bwa-mem3', 'bwa-meme', 'chromap'
+    mapper: 'minibwa' 
+    #available: 'bwa-mem', 'bwa-mem2', 'bwa-mem3', 'bwa-meme', 'chromap', 'minibwa'
     # If using 'chromap', all parsing parameters are ignored, since chromap
     # outputs deduplicated .pairs files directly.
     # In addition, chromap saves a minimal .pairs file with only the strictly required
