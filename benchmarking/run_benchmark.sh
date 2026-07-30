@@ -70,10 +70,19 @@ for arm in ${ARMS}; do
     mkdir -p "${workdir}"
 
     # Link every top-level entry that inputs may refer to (test data, custom genomes).
+    # results/, logs/ and benchmarks/ must NEVER be linked in: they are the
+    # workflow's own output directories (see output.dirs in the config, plus the
+    # log:/benchmark: directives in the Snakefile), and their paths do not encode
+    # the backend. If they already exist at the repo root (e.g. from a manual,
+    # non-benchmark run used to sanity-check the workflow) and get linked here,
+    # both arms resolve to the *same* physical directory, so whichever arm runs
+    # second finds its final targets already present and Snakemake reports
+    # "Nothing to be done" without recomputing anything -- silently turning that
+    # arm's output into a copy of the other arm's.
     for entry in "${REPO_ROOT}"/*; do
         name="$(basename "${entry}")"
         case "${name}" in
-            bench|workflow|config|benchmarking|.git) continue ;;
+            bench|workflow|config|benchmarking|.git|results|logs|benchmarks) continue ;;
         esac
         [[ -e "${workdir}/${name}" ]] || ln -s "${entry}" "${workdir}/${name}"
     done

@@ -155,10 +155,24 @@ is fixed upstream.
 **Dedup keeps a different representative.** With `duckdb`, the pairs that survive
 deduplication are the same *contacts* as pairtools produces, but the surviving row
 of each duplicate family can be a different read. So whole-line diffs of
-`.nodups` show a large fraction of rows differing while the coolers are
-pixel-identical. `compare_outputs.py` compares the contact columns for pass/fail
-and reports readID-only differences separately. It also shows up as a small
+`.nodups` show a large fraction of rows differing, not just in `readID` but in
+every column that describes the read rather than the contact -- `mapq1`/`mapq2`
+in particular, since different physical reads in a duplicate family generally
+mapped with different quality. `compare_outputs.py` compares only the contact
+columns (`chrom1/pos1/chrom2/pos2/strand1/strand2`) for pass/fail and reports
+`readID`- and `mapq`-only differences separately. It also shows up as a small
 difference in `dups_by_tile_median`, which depends on which read IDs survive.
+
+This is harmless for anything downstream that only depends on the contact --
+`.stats`, scaling, an unfiltered cooler. It is **not** harmless for a cooler
+built from a *filtered* stream: `bin_pairs_library` runs `pairtools select
+"mapq1>=30 and mapq2>=30"` before binning, and mapq is exactly the column that
+differs by representative. On `benchmark_large.yml` a substantial fraction of
+the mapq-differing rows straddle the mapq-30 threshold (roughly a quarter to a
+half, depending on the library), so the two arms' `mapq_30.cool` files differ by
+up to ~1-2% of pixels -- not because binning or filtering disagrees on the rule,
+but because the two arms disagree on which read's mapq to filter on. Coolers
+built without a mapq (or other read-attribute) filter are unaffected.
 
 ## A pairtools bug the baseline arm needs patched
 

@@ -58,10 +58,10 @@ input:
 do_fastqc: False
 
 map:
-    mapper: 'bwa-mem2'
+    mapper: 'minibwa'
     # Chunking multiplies the number of parse|sort pipes and gives merge_runs real
     # work to do. Set to 0 to map each run in one go instead.
-    chunksize: 10000000
+    chunksize: 0
     mapping_options: ''
     trim_options: ''
     use_custom_split: True

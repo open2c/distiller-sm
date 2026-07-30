@@ -7,24 +7,37 @@ Compares, per library / library group:
     `pairtools stats --merge` has a non-reproducible line order upstream.
   * .cool                                -- total counts, nnz and per-pixel values.
   * .nodups.scaling.tsv                  -- numerically, within tolerance.
-  * the deduplicated pairs themselves    -- row counts, and the number of rows
-    present in one arm but not the other.
+  * the deduplicated pairs themselves    -- contacts (chrom1/pos1/chrom2/pos2/
+    strand1/strand2) present in one arm but not the other, plus a breakdown of
+    same-contact rows that differ only in a read-dependent column (mapq1,
+    mapq2, pair_type, ...).
 
-With `pairtools.dedup_backend: duckdb` (the default) a small number of rows are
-*expected* to differ: where a chain of near-duplicates straddles a chunk boundary,
-pairtools drops the link and reports the tail as unique while duckdb keeps the chain.
-Upstream measures roughly 3 rows per million. Differences up to --dedup-tolerance
-(as a fraction of the total) are therefore reported but not treated as failures.
+With `pairtools.dedup_backend: duckdb` (the default) a small number of *contacts*
+are *expected* to differ: where a chain of near-duplicates straddles a chunk
+boundary, pairtools drops the link and reports the tail as unique while duckdb
+keeps the chain. Upstream measures roughly 3 rows per million. Differences up to
+--dedup-tolerance (as a fraction of the total) are therefore reported but not
+treated as failures.
+
+Separately, and much more commonly, duckdb and pairtools agree on every contact
+but keep a different member of each duplicate family as the surviving row. That
+row carries that read's own mapq1/mapq2 (and, in principle, pair_type) -- not a
+disagreement about the contact, just about which read represents it. This is
+reported but never counted toward --dedup-tolerance. It does mean that a filter
+applied before binning (e.g. `mapq_30`) can let a different subset of contacts
+through in each arm, which is why coolers built from a mapq-filtered stream are
+not guaranteed to be pixel-identical even though the contacts underneath agree.
 
     python benchmarking/compare_outputs.py [bench_dir] [--dedup-tolerance 1e-4]
 
-Exits non-zero if anything differs beyond that.
+Exits non-zero if contacts differ beyond that.
 """
 
 import argparse
 import gzip
 import subprocess
 import sys
+from collections import Counter, defaultdict
 from pathlib import Path
 
 PAIRS_LIBRARY = "results/pairs_library"
@@ -126,19 +139,34 @@ def read_pairs(path, converter_env=None):
 # different member of a duplicate family, which changes these and nothing else.
 READ_ID_COLUMNS = {"readID", "parent_readID"}
 
+# The contact itself: what dedup groups duplicates by. Everything else in a
+# .pairs row (pair_type, mapq1, mapq2, ...) describes the specific read that was
+# kept as a duplicate family's representative, which the two backends are free
+# to disagree on -- see the module docstring.
+CONTACT_COLUMNS = {"chrom1", "pos1", "chrom2", "pos2", "strand1", "strand2"}
 
-def strip_read_ids(rows, columns):
-    """Drop the readID-ish columns so only the contact itself is compared."""
-    if not columns:
-        return rows
-    keep = [i for i, name in enumerate(columns) if name not in READ_ID_COLUMNS]
-    if len(keep) == len(columns):
-        return rows
-    out = []
+
+def split_columns(columns):
+    """Split column indices into (contact-identity, read-dependent-attribute)."""
+    contact_idx = [i for i, name in enumerate(columns) if name in CONTACT_COLUMNS]
+    attribute_idx = [
+        i
+        for i, name in enumerate(columns)
+        if name not in CONTACT_COLUMNS and name not in READ_ID_COLUMNS
+    ]
+    return contact_idx, attribute_idx
+
+
+def _select(fields, idx):
+    return tuple(fields[i] for i in idx if i < len(fields))
+
+
+def _index_by_contact(rows, contact_idx, attribute_idx):
+    by_contact = defaultdict(list)
     for row in rows:
         fields = row.split("\t")
-        out.append("\t".join(fields[i] for i in keep if i < len(fields)))
-    return out
+        by_contact[_select(fields, contact_idx)].append(_select(fields, attribute_idx))
+    return by_contact
 
 
 def compare_pairs(a_path, b_path, label, tolerance, converter_env):
@@ -154,24 +182,48 @@ def compare_pairs(a_path, b_path, label, tolerance, converter_env):
         return
 
     total = max(len(a_rows), 1)
+    contact_idx, attribute_idx = split_columns(a_cols)
+    attribute_names = [a_cols[i] for i in attribute_idx]
 
-    # The contact itself -- everything except which read of a duplicate family
-    # happened to be kept. This is what has to agree.
-    a_contacts = set(strip_read_ids(a_rows, a_cols))
-    b_contacts = set(strip_read_ids(b_rows, b_cols))
-    only_a = len(a_contacts - b_contacts)
-    only_b = len(b_contacts - a_contacts)
+    a_by_contact = _index_by_contact(a_rows, contact_idx, attribute_idx)
+    b_by_contact = _index_by_contact(b_rows, contact_idx, attribute_idx)
+
+    # Contacts missing on one side entirely -- the real disagreement, and what
+    # --dedup-tolerance is measured against.
+    only_a = 0
+    only_b = 0
+    # Contacts present in both. `identical` rows agree on every column;
+    # `differing` rows agree on the contact but not on some read-dependent
+    # column -- expected when dedup kept a different duplicate-family member.
+    identical = 0
+    differing = 0
+    per_column_diffs = Counter()
+
+    for key in set(a_by_contact) | set(b_by_contact):
+        a_attrs = sorted(a_by_contact.get(key, []))
+        b_attrs = sorted(b_by_contact.get(key, []))
+        matched = min(len(a_attrs), len(b_attrs))
+        only_a += len(a_attrs) - matched
+        only_b += len(b_attrs) - matched
+        for a_row, b_row in zip(a_attrs[:matched], b_attrs[:matched]):
+            if a_row == b_row:
+                identical += 1
+            else:
+                differing += 1
+                for name, a_val, b_val in zip(attribute_names, a_row, b_row):
+                    if a_val != b_val:
+                        per_column_diffs[name] += 1
+
     fraction = (only_a + only_b) / total
 
-    if only_a == 0 and only_b == 0 and len(a_rows) == len(b_rows):
-        # Same contacts, same count. Whole rows may still differ if dedup kept a
-        # different member of a duplicate family, which is expected and harmless.
-        differing_ids = len(set(a_rows) - set(b_rows))
-        if differing_ids:
+    if only_a == 0 and only_b == 0:
+        if differing:
+            detail = ", ".join(f"{name}: {n}" for name, n in per_column_diffs.most_common())
             ok(
-                f"{label}: {len(a_rows)} rows, contacts identical "
-                f"({differing_ids} differ only in readID -- dedup kept a different "
-                f"member of the duplicate family)"
+                f"{label}: {len(a_rows)} rows, contacts identical -- "
+                f"{identical} rows fully identical, {differing} same contact but "
+                f"differ in a read-dependent column ({detail}) -- dedup kept a "
+                f"different member of the duplicate family"
             )
         else:
             ok(f"{label}: {len(a_rows)} rows, identical")
@@ -180,7 +232,8 @@ def compare_pairs(a_path, b_path, label, tolerance, converter_env):
     message = (
         f"{label}: {len(a_rows)} vs {len(b_rows)} rows; contacts differ -- "
         f"{only_a} only in baseline, {only_b} only in candidate "
-        f"({fraction:.2e} of total)"
+        f"({fraction:.2e} of total; of the rest, {differing} same contact but "
+        f"differ in a read-dependent column)"
     )
     if fraction <= tolerance:
         note(message + " -- within the documented dedup divergence")
