@@ -89,6 +89,18 @@ if PARQUET and "--backend cython" in config.get("dedup", {}).get("dedup_options"
     )
 export_text_pairs = PARQUET and PT_CFG.get("export_text_pairs", False)
 
+# By default, each run's chunks are merged into their own {run}.PAIRS_EXT file (kept
+# on disk) before merge_dedup merges across runs. Setting this False skips the
+# per-run merge and feeds every chunk from every run of a library into a single
+# merge + dedup pass -- one merge instead of (n_runs + 1), and no per-run
+# intermediate written. Applies to both backends.
+MERGE_RUNS_BEFORE_DEDUP = PT_CFG.get("merge_runs_before_dedup", True)
+# Only meaningful when MERGE_RUNS_BEFORE_DEDUP is False: also produce the per-run
+# merged pairs files as an extra workflow target, even though merge_dedup no longer
+# needs them. Ignored (and unnecessary) when MERGE_RUNS_BEFORE_DEDUP is True, since
+# then they already exist as merge_dedup's input.
+KEEP_RUN_PAIRS = PT_CFG.get("keep_run_pairs", False)
+
 
 # Optional user-provided rules. Absent by default.
 if (Path(workflow.basedir) / "rules" / "custom.smk").exists():
@@ -236,6 +248,15 @@ if export_text_pairs:
             f"{pairs_library_folder}/{library}.{lib_asm}.nodups.pairs.gz"
         )
 
+# Per-run merged pairs files, when requested as an extra target alongside the
+# direct chunks-to-library merge (see MERGE_RUNS_BEFORE_DEDUP / KEEP_RUN_PAIRS above).
+library_run_pairs = []
+if not MERGE_RUNS_BEFORE_DEDUP and KEEP_RUN_PAIRS:
+    for library in LIBRARY_RUN_FASTQS.keys():
+        lib_asm = get_library_assembly(library)
+        for run in LIBRARY_RUN_FASTQS[library].keys():
+            library_run_pairs.append(f"{pairs_runs_folder}/{library}/{run}.{lib_asm}.{PAIRS_EXT}")
+
 # Setting up scaling from pairs outputs if required
 library_scaling_pairs = []
 if "scaling_pairs" in config and config["scaling_pairs"].get("do_scaling", True):
@@ -372,6 +393,7 @@ rule default:
         library_hic,
         library_scaling_pairs,
         library_text_pairs,
+        library_run_pairs,
         # library_group_scaling_pairs,
         fastqc,
         multiqc,
@@ -923,6 +945,26 @@ def get_pair_chunks(wildcards):
     return paths
 
 
+def get_library_chunks(wildcards):
+    """Every mapped/parsed/sorted chunk pairs file across every run of a library.
+
+    Used instead of get_pair_chunks when MERGE_RUNS_BEFORE_DEDUP is False, to feed
+    merge_dedup directly without going through a per-run merge first.
+    """
+    lib_asm = get_library_assembly(wildcards.library)
+    paths = []
+    for run in LIBRARY_RUN_FASTQS[wildcards.library].keys():
+        checkpoints.chunk_fastq.get(library=wildcards.library, run=run)
+        chunk_ids = glob_wildcards(
+            f"{processed_fastqs_folder}/{wildcards.library}/{run}/2.{{chunk_id}}.fastq.gz",
+        ).chunk_id
+        paths += expand(
+            f"{mapped_parsed_sorted_chunks_folder}/{wildcards.library}/{run}/{{chunk_id}}.{lib_asm}.{PAIRS_EXT}",
+            chunk_id=chunk_ids,
+        )
+    return paths
+
+
 rule merge_runs:
     input:
         get_pair_chunks,
@@ -1022,9 +1064,9 @@ def _dedup_pipeline(input, threads):
             stages.append(f"pairtools sort --nproc {side_nproc}")
 
     if not stages:
-        # Parquet, a single run, no phasing: hand dedup the file. This skips both the
-        # decompression pass the text path needs and dedup's spooling of stdin to a
-        # temporary parquet file.
+        # Parquet, a single input file, no phasing: hand dedup the file directly.
+        # This skips both the decompression pass the text path needs and dedup's
+        # spooling of stdin to a temporary parquet file.
         return "", files
 
     rendered = [
@@ -1091,12 +1133,21 @@ for _cmd in _post_commands:
     merge_dedup_command += f" && {_cmd} >>{{log[0]}} 2>&1"
 
 
-rule merge_dedup:
-    input:
-        pairs=lambda wildcards: expand(
+def _merge_dedup_pairs_input(wildcards):
+    """merge_dedup's pairs input: per-run merged files by default, or every chunk
+    from every run directly when MERGE_RUNS_BEFORE_DEDUP is False (see the
+    'pairtools' config section)."""
+    if MERGE_RUNS_BEFORE_DEDUP:
+        return expand(
             f"{pairs_runs_folder}/{wildcards.library}/{{run}}.{wildcards.assembly_name}.{PAIRS_EXT}",
             run=list(LIBRARY_RUN_FASTQS[wildcards.library].keys()),
-        ),
+        )
+    return get_library_chunks(wildcards)
+
+
+rule merge_dedup:
+    input:
+        pairs=_merge_dedup_pairs_input,
     output:
         **merge_output,
     log:

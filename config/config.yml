@@ -117,6 +117,20 @@ pairtools:
     #               nothing downstream in this workflow needs one.
     backend: 'parquet'
 
+    # How runs are combined into the per-library pairs file. By default (True),
+    # each run's chunks are first merged into their own {run}.pairs.gz/.parquet
+    # file (kept on disk, under output.dirs.pairs_runs), and then merge_dedup does
+    # a second merge across runs before deduplicating. Set this to False to skip
+    # the per-run merge and feed every chunk from every run straight into a single
+    # merge + dedup pass -- one merge instead of (n_runs + 1), and no per-run
+    # intermediate written. Applies to both backends.
+    merge_runs_before_dedup: True
+
+    # Only relevant when merge_runs_before_dedup is False. Set True to still
+    # produce the per-run merged pairs files as an extra workflow target, even
+    # though the main library pipeline no longer needs them.
+    keep_run_pairs: False
+
     ############################################################
     # The remaining options only apply when backend == 'parquet'.
     ############################################################

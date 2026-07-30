@@ -51,3 +51,18 @@ need byte-identical output. See `benchmarking/README.md`.
 Note that with `backend: parquet` no `pairix` index is produced -- parquet cannot be
 bgzf-indexed. Nothing downstream in this workflow reads one; enable
 `export_text_pairs` if an external tool needs `.pairs.gz`.
+
+### Merging chunks and runs
+
+Each run's chunks normally go through two merge passes before dedup: chunks merge
+into a per-run file (`{run}.pairs.gz`/`.parquet`, kept under
+`output.dirs.pairs_runs`), then `merge_dedup` merges across a library's runs. Set
+`pairtools.merge_runs_before_dedup: False` to skip the per-run merge and feed every
+chunk from every run of a library into `merge_dedup` directly -- one merge pass
+instead of `n_runs + 1`, and no per-run intermediate written. The final library
+pairs are identical either way; this only changes how many merge passes happen and
+whether a per-run file exists.
+
+If you still want the per-run files as a separate artifact while using the direct
+path, set `pairtools.keep_run_pairs: True` too -- they'll be produced as an extra
+workflow target rather than as merge_dedup's input.
