@@ -127,8 +127,11 @@ def _get_index_extensions(mapper):
     """Return the index file extensions for the given mapper."""
     if mapper == "bwa-mem":
         return [".amb", ".ann", ".bwt", ".pac", ".sa"]
-    elif mapper in ["bwa-mem2", "bwa-mem3"]:
+    elif mapper == "bwa-mem2":
         return [".0123", ".amb", ".ann", ".bwt.2bit.64", ".pac"]
+    elif mapper == "bwa-mem3":
+        # No .0123: unlike bwa-mem2, bwa-mem3's own `index` command doesn't produce one.
+        return [".amb", ".ann", ".bwt.2bit.64", ".pac"]
     elif mapper == "minibwa":
         return [".l2b", ".mbw"]
     elif mapper == "bwa-meme":  # bwa-meme
@@ -659,7 +662,7 @@ if mapper == "chromap":
         log:
             f"logs/chromap_index/{assembly}.log",
 
-elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3"):
+elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme"):
 
     rule bwaindex:
         input:
@@ -684,6 +687,34 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3"):
             idx=multiext(genome_path, *IDX_EXTS),
         log:
             f"logs/bwaindex/{assembly}.log",
+
+elif mapper == "bwa-mem3":
+
+    # bwa-mem3 isn't a backend the shared bio/bwa-memx/index wrapper supports, so it gets
+    # its own rule, same as minibwa below.
+    rule bwamem3index:
+        input:
+            genome=f"{view_genomes_folder}/{{library}}.{assembly}.fa",
+        output:
+            idx=_maybe_temp(
+                multiext(f"{view_genomes_folder}/{{library}}.{assembly}.fa", *IDX_EXTS)
+            ),
+        log:
+            f"logs/bwamem3index/{{library}}.{assembly}.log",
+        cache: True
+        conda:
+            "envs/bwa_mem3.yml"
+        threads: 1
+        shell:
+            "bwa-mem3 index {input.genome} >{log} 2>&1"
+
+    use rule bwamem3index as bwamem3index_global with:
+        input:
+            genome=genome_path,
+        output:
+            idx=multiext(genome_path, *IDX_EXTS),
+        log:
+            f"logs/bwamem3index/{assembly}.log",
 
 elif mapper == "minibwa":
 
