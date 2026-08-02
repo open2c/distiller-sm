@@ -791,13 +791,14 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
     bam_path = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.bam"
     keep_bams = config["parse"]["keep_unparsed_bams"]
 
-    # minibwa's rule pipes explicitly through `samtools view`, so it can `tee` that single
-    # compression pass to both a persisted file and a pipe() feeding parse_sort_chunks
-    # directly, instead of writing the full BAM to disk and then having parse_sort_chunks
-    # decompress it back in a separate job. The other mappers write {output.bam} themselves
-    # (bwa-mem3's own --bam flag, or the opaque bwa-memx wrapper), so for them keeping bams
-    # still means parse_sort_chunks re-reads the persisted file.
-    tee_bams = mapper == "minibwa" and keep_bams
+    # minibwa and bwa-mem3 can both stream BAM to stdout themselves (minibwa via
+    # `samtools view` piped in explicitly, bwa-mem3 via its own `--bam` flag), so they can
+    # `tee` that single compression pass to both a persisted file and a pipe() feeding
+    # parse_sort_chunks directly, instead of writing the full BAM to disk and then having
+    # parse_sort_chunks decompress it back in a separate job. bwa-mem/-mem2/-meme go
+    # through the opaque bwa-memx wrapper, so for them keeping bams still means
+    # parse_sort_chunks re-reads the persisted file.
+    tee_bams = mapper in ("minibwa", "bwa-mem3") and keep_bams
     if tee_bams:
         stream_bam_path = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.stream.bam"
         stream_bam = pipe(stream_bam_path)
@@ -883,34 +884,73 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
 
         if mapper == "bwa-mem3":
 
-            rule map_chunks_bwamem3:
-                input:
-                    reads=lambda wildcards: (
-                        [
-                            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
-                            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
-                        ]
-                        if config["map"]["trim_options"]
-                        else [
-                            f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
-                            f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
-                        ]
-                    ),
-                    reference=get_library_genome_path,
-                    idx=get_idx,
-                output:
-                    bam=output_bam,
-                log:
-                    "logs/bwa_mem3/{library}.{run}.{chunk_id}.{assembly_name}.log",
-                benchmark:
-                    "benchmarks/bwa_mem3/{library}.{run}.{chunk_id}.{assembly_name}.tsv"
-                conda:
-                    "envs/bwa_mem3.yml"
-                threads: 4
-                params:
-                    extra="-SP " + config["map"].get("mapping_options", ""),
-                shell:
-                    "bwa-mem3 mem -t {threads} {params.extra} {input.reference} {input.reads[0]} {input.reads[1]} --bam -o {output.bam} >{log} 2>&1"
+            bwamem3_common_input = dict(
+                reads=lambda wildcards: (
+                    [
+                        f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
+                        f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
+                    ]
+                    if config["map"]["trim_options"]
+                    else [
+                        f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
+                        f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
+                    ]
+                ),
+                reference=get_library_genome_path,
+                idx=get_idx,
+            )
+            bwamem3_common_params = dict(
+                extra="-SP " + config["map"].get("mapping_options", ""),
+            )
+            # `--bam[=N]` writes BAM straight to stdout (N=0, the bare flag's default, is
+            # uncompressed; 1-9 are BGZF deflate levels), so -- like minibwa -- this needs
+            # no separate `samtools view` step to tee. See the comment above tee_bams for
+            # why piped output stays uncompressed and a persisted, kept BAM gets
+            # compressed.
+            bwamem3_map = (
+                "bwa-mem3 mem -t {threads} {params.extra} {input.reference} "
+                "{input.reads[0]} {input.reads[1]} --bam"
+            )
+
+            if tee_bams:
+
+                rule map_chunks_bwamem3:
+                    input:
+                        **bwamem3_common_input,
+                    output:
+                        bam=output_bam,
+                        bam_stream=stream_bam,
+                    log:
+                        "logs/bwa_mem3/{library}.{run}.{chunk_id}.{assembly_name}.log",
+                    benchmark:
+                        "benchmarks/bwa_mem3/{library}.{run}.{chunk_id}.{assembly_name}.tsv"
+                    conda:
+                        "envs/bwa_mem3.yml"
+                    threads: 4
+                    params:
+                        **bwamem3_common_params,
+                    shell:
+                        bwamem3_map
+                        + "=1 2>{log} | tee {output.bam} > {output.bam_stream} 2>>{log}"
+
+            else:
+
+                rule map_chunks_bwamem3:
+                    input:
+                        **bwamem3_common_input,
+                    output:
+                        bam=stream_bam,
+                    log:
+                        "logs/bwa_mem3/{library}.{run}.{chunk_id}.{assembly_name}.log",
+                    benchmark:
+                        "benchmarks/bwa_mem3/{library}.{run}.{chunk_id}.{assembly_name}.tsv"
+                    conda:
+                        "envs/bwa_mem3.yml"
+                    threads: 4
+                    params:
+                        **bwamem3_common_params,
+                    shell:
+                        bwamem3_map + " 2>{log} > {output.bam}"
 
         else:
 

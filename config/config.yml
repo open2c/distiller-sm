@@ -186,10 +186,11 @@ parse:
     # output of bwa in a .bam format. Could be used as a faster alternative
     # to 'make_pairsam' when alignments are needed, but tagging them with Hi-C
     # related information is not necessary.
-    # With mapper: 'minibwa', this comes at no extra cost: the BAM stream is
-    # tee'd to disk and into pairtools parse at the same time, instead of
-    # writing it out and then having parse read it back. With the other
-    # mappers, keeping bams still means parse re-reads the persisted file.
+    # With mapper: 'minibwa' or 'bwa-mem3', this comes at no extra cost: the
+    # BAM stream is tee'd to disk and into pairtools parse at the same time,
+    # instead of writing it out and then having parse read it back. With
+    # 'bwa-mem'/'bwa-mem2'/'bwa-meme', keeping bams still means parse
+    # re-reads the persisted file.
     keep_unparsed_bams: False
 
     # Pass extra options to pairtools parse, on top of the ones specified by
