@@ -787,42 +787,97 @@ if mapper == "chromap":
             """
 
 elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
-    # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse
-    # Perhaps something with tee might be faster, had trouble getting it to work
-    output_bam = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.bam"
-    if not config["parse"]["keep_unparsed_bams"]:
-        output_bam = pipe(output_bam)
+    # If we keep bams, simply store the output in the folder, otherwise pipe it to pairtools parse.
+    bam_path = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.bam"
+    keep_bams = config["parse"]["keep_unparsed_bams"]
+
+    # minibwa's rule pipes explicitly through `samtools view`, so it can `tee` that single
+    # compression pass to both a persisted file and a pipe() feeding parse_sort_chunks
+    # directly, instead of writing the full BAM to disk and then having parse_sort_chunks
+    # decompress it back in a separate job. The other mappers write {output.bam} themselves
+    # (bwa-mem3's own --bam flag, or the opaque bwa-memx wrapper), so for them keeping bams
+    # still means parse_sort_chunks re-reads the persisted file.
+    tee_bams = mapper == "minibwa" and keep_bams
+    if tee_bams:
+        stream_bam_path = f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.stream.bam"
+        stream_bam = pipe(stream_bam_path)
+    elif keep_bams:
+        stream_bam_path = bam_path
+        stream_bam = bam_path
+    else:
+        stream_bam_path = bam_path
+        stream_bam = pipe(bam_path)
+    output_bam = bam_path
 
     if mapper == "minibwa":
 
-        rule map_chunks_minibwa:
-            input:
-                reads=lambda wildcards: (
-                    [
-                        f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
-                        f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
-                    ]
-                    if config["map"]["trim_options"]
-                    else [
-                        f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
-                        f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
-                    ]
-                ),
-                reference=get_library_genome_path,
-                idx=get_idx,
-            output:
-                bam=output_bam,
-            log:
-                "logs/minibwa/{library}.{run}.{chunk_id}.{assembly_name}.log",
-            benchmark:
-                "benchmarks/minibwa/{library}.{run}.{chunk_id}.{assembly_name}.tsv"
-            conda:
-                "envs/minibwa.yml"
-            threads: 4
-            params:
-                extra="--hic " + config["map"].get("mapping_options", ""),
-            shell:
-                "minibwa map -t{threads} {params.extra} {input.reference} {input.reads[0]} {input.reads[1]} 2>{log} | samtools view -bS > {output.bam} 2>{log}"
+        minibwa_common_input = dict(
+            reads=lambda wildcards: (
+                [
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}_trimmed.fastq.gz",
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}_trimmed.fastq.gz",
+                ]
+                if config["map"]["trim_options"]
+                else [
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/1.{{chunk_id}}.fastq.gz",
+                    f"{processed_fastqs_folder}/{{library}}/{{run}}/2.{{chunk_id}}.fastq.gz",
+                ]
+            ),
+            reference=get_library_genome_path,
+            idx=get_idx,
+        )
+        minibwa_common_params = dict(
+            extra="--hic " + config["map"].get("mapping_options", ""),
+        )
+        # Shared prefix for both branches below: map, then view. Only the compression
+        # level, and whether the BAM stream is also tee'd to a second, persisted output,
+        # differ -- piped output is ephemeral (read immediately by parse_sort_chunks in
+        # the same pipe group), so compressing it buys nothing; a persisted, kept BAM is
+        # worth compressing.
+        minibwa_map_and_view = (
+            "minibwa map -t{threads} {params.extra} {input.reference} "
+            "{input.reads[0]} {input.reads[1]} 2>{log} | samtools view"
+        )
+
+        if tee_bams:
+
+            rule map_chunks_minibwa:
+                input:
+                    **minibwa_common_input,
+                output:
+                    bam=output_bam,
+                    bam_stream=stream_bam,
+                log:
+                    "logs/minibwa/{library}.{run}.{chunk_id}.{assembly_name}.log",
+                benchmark:
+                    "benchmarks/minibwa/{library}.{run}.{chunk_id}.{assembly_name}.tsv"
+                conda:
+                    "envs/minibwa.yml"
+                threads: 4
+                params:
+                    **minibwa_common_params,
+                shell:
+                    minibwa_map_and_view
+                    + " -b -1 | tee {output.bam} > {output.bam_stream} 2>>{log}"
+
+        else:
+
+            rule map_chunks_minibwa:
+                input:
+                    **minibwa_common_input,
+                output:
+                    bam=stream_bam,
+                log:
+                    "logs/minibwa/{library}.{run}.{chunk_id}.{assembly_name}.log",
+                benchmark:
+                    "benchmarks/minibwa/{library}.{run}.{chunk_id}.{assembly_name}.tsv"
+                conda:
+                    "envs/minibwa.yml"
+                threads: 4
+                params:
+                    **minibwa_common_params,
+                shell:
+                    minibwa_map_and_view + " -bu > {output.bam} 2>>{log}"
 
     else:
 
@@ -891,7 +946,7 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
 
     rule parse_sort_chunks:
         input:
-            bam=f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.bam",
+            bam=stream_bam_path,
             chromsizes=get_library_chromsizes,
         output:
             f"{mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{{assembly_name}}.{PAIRS_EXT}",
@@ -903,9 +958,6 @@ elif mapper in ("bwa-mem", "bwa-mem2", "bwa-meme", "bwa-mem3", "minibwa"):
             PT_ENV
         threads: 4
         params:
-            # keep_bams_command=f"| tee >(samtools view -bS > {mapped_parsed_sorted_chunks_folder}/{{library}}/{{run}}/{{chunk_id}}.{assembly}.bam)"
-            # if config["parse"]["keep_unparsed_bams"]
-            # else "",
             dropsam_flag=(
                 "" if config["parse"].get("make_pairsam", False) else "--drop-sam"
             ),
