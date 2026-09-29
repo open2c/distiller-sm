@@ -43,10 +43,6 @@ chromsizes_path = config["input"]["genome"].get(
 genomic_views = config.get("input", {}).get("genomic_views", {})
 keep_view_genomes = config.get("input", {}).get("keep_view_genomes", False)
 
-
-include: "rules/custom.smk"
-
-
 def get_library_assembly(library):
     """Return the assembly name for a library: '{assembly}.{view_stem}' if it has a
     genomic view, otherwise the base assembly name.
